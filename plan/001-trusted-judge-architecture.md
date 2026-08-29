@@ -296,11 +296,11 @@ Two distinct needs, previously conflated.
 
 **Choose a tool-calling dataset, not plain chat.** T0 deterministic gates (§3.2.1) are the unhackable signal that makes the whole trusted-judge design safe, and they need objectively checkable outputs. Plain chat provides nothing the judge cannot game.
 
-| Candidate | Notes |
-|---|---|
-| **Schema-Guided Dialogue (SGD)** — *preferred* | large, many domains, GT API calls + slots; `metadata.domain` gives free slices for `000` P6.2 |
-| MultiWOZ 2.2 | smaller, multi-turn, well known; lighter fixture |
-| Glaive function-calling v2 / BFCL | simplest mapping, but single-turn and synthetic — weaker "production trace" story |
+| Candidate | Licence | Notes |
+|---|---|---|
+| **[Schema-Guided Dialogue (SGD)](https://github.com/google-research-datasets/dstc8-schema-guided-dialogue)** — *chosen* | **CC BY-SA 4.0** (verified 2026-08-30) | large, many domains, GT API calls + slots; `metadata.domain` gives free slices for `000` P6.2. Share-alike — see §8.4 |
+| MultiWOZ 2.2 | **unverified** | smaller, multi-turn, well known; lighter fixture. Check licence before use |
+| Glaive function-calling v2 / BFCL | **unverified** | simplest mapping, but single-turn and synthetic — weaker "production trace" story. Check licence before use |
 
 Failures are manufactured: run a weak base model over the inputs, capture as `output`, keep the dataset's own call as an *optional* gold. Under trusted-judge the gold is not required, but having it lets the demo show both T2 and T3 side by side.
 
@@ -308,12 +308,14 @@ Failures are manufactured: run a weak base model over the inputs, capture as `ou
 
 These carry real human preference labels and exist to prove §3 and P3a are not decorative.
 
-| Dataset | Use |
-|---|---|
-| **LLMBar** — *preferred* | adversarially built so naive judges fail; the best single fixture for the bias probes |
-| MT-Bench human judgments | canonical judge-calibration set; validates `judgecard/metrics.py` κ against real human votes |
-| Chatbot Arena conversations | real prompts + human votes at scale; good for position-bias probes |
-| RewardBench | chosen/rejected pairs; validates the §5.1 admission gate |
+| Dataset | Licence | Use |
+|---|---|---|
+| **[LLMBar](https://github.com/princeton-nlp/LLMBar)** — *chosen* | **MIT** (verified 2026-08-30) | adversarially built so naive judges fail; the best single fixture for the bias probes. Permissive — **commit the rows**, so the P3a acceptance test runs in CI with no download |
+| **[MT-Bench human judgments](https://huggingface.co/datasets/lmsys/mt_bench_human_judgments)** — *chosen* | **CC BY 4.0** (verified 2026-08-30) | 3.3k expert pairwise votes over 6 models; validates `judgecard/metrics.py` κ against real human votes. Attribution to LMSYS required |
+| Chatbot Arena conversations | **unverified** | real prompts + human votes at scale; good for position-bias probes |
+| RewardBench | **unverified** | chosen/rejected pairs; validates the §5.1 admission gate |
+
+**LLMBar caveat:** the *Natural* set is assembled from upstream human-preference datasets whose individual instances may carry their own terms. The *Adversarial* set is Princeton-authored and is the half that matters for bias probes — prefer it for the committed fixture.
 
 Adding LLMBar upgrades the `000` P3.5 acceptance test from "we catch judges we built to be broken" to "we catch judges on data designed to break judges."
 
@@ -321,9 +323,20 @@ Adding LLMBar upgrades the `000` P3.5 acceptance test from "we catch judges we b
 
 Keep the hand-written ~50-trace synthetic set in `tests/fixtures/traces/` — deterministic, no downloads, no licence risk. Must cover four kinds: fail-with-target, pass, fail-without-target (must land in `dropped_no_target`), and judge-trap traces.
 
-### 8.4 Licensing
+### 8.4 Licensing — verified 2026-08-30
 
-Several of the above are research-use or restrict redistribution, which is incompatible with shipping rows inside an Apache-2.0 repo. **Commit a `fetch.py` + mapping YAML, never the data.** Verify each licence before the example directory is populated.
+Licences attach to the **data**, not to the tool. None of the below affects EvalLoop's own Apache-2.0 code licence, and a customer running EvalLoop over their own traces is unaffected entirely.
+
+| Dataset | Licence | Commit rows into this repo? |
+|---|---|---|
+| SGD | CC BY-SA 4.0 | **No** — fetch script only |
+| LLMBar | MIT | **Yes** |
+| MT-Bench human judgments | CC BY 4.0 | Yes, with attribution |
+| MultiWOZ 2.2, Glaive/BFCL, Chatbot Arena, RewardBench | unverified | Verify before use |
+
+**The share-alike question.** SGD is CC BY-**SA** 4.0, not plain BY. A compiled SFT/DPO dataset derived from SGD prompts is a derivative of the dataset, so *distributing* one obliges you to release it under CC BY-SA 4.0 as well. This does not reach the code, and it does not reach a customer who never distributes their training data — but it does mean EvalLoop must not ship a prebuilt example dataset built from SGD.
+
+**Standing rule:** for anything not permissively licensed, commit a `fetch.py` + mapping YAML and let the user materialise the rows locally. This sidesteps redistribution entirely and keeps the repo small. LLMBar is the exception — MIT, so its rows are committed directly and CI needs no network.
 
 ---
 
