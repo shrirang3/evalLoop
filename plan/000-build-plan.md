@@ -1,5 +1,12 @@
 # EvalLoop — Build Plan (P0 → P6)
 
+> **Partially superseded by [`001-trusted-judge-architecture.md`](001-trusted-judge-architecture.md) (2026-08-30).**
+> This document assumes the customer has ground truth. `001` removes that precondition and revises
+> **P3** (split into judge health / judge calibration), **P4** (provenance instead of prohibition,
+> `judge_preference_pair` target source), and **P6** (integrity block, held-out questions,
+> deterministic gate floor). It also adds **P2.5** (latent GT harvesting). Everything else below stands
+> as written — read `001` alongside it, not instead of it.
+
 ## Context
 
 Teams shipping LLM/voice products have production traces and some ground truth, but no path from "this trace was wrong" to "a better model is in production." Today that path is hand-rolled per team: ad-hoc eval scripts, an LLM judge nobody calibrated, a training JSONL assembled by hand, and a promotion decision made on vibes.
