@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# EvalLoop runtime output
+artifacts/
+runs/
+bundles/
+out/
+*.parquet
+*.duckdb
+
+# Model artifacts (adapters, checkpoints) - never committed
+adapters/
+checkpoints/
+*.safetensors
+*.bin
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+*.pem
+local.yaml
+*.local.yaml
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
