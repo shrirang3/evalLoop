@@ -1,3 +1,10 @@
-"""EvalLoop - a configurable evaluation and improvement control plane for AI products."""
+"""EvalLoop — a configurable evaluation and improvement control plane for AI products."""
 
-__version__ = "0.0.1"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("evalloop")
+except PackageNotFoundError:  # running from a source tree without an install
+    __version__ = "0.0.0+unknown"
+
+__all__ = ["__version__"]

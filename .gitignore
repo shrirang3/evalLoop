@@ -1,6 +1,8 @@
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
 *.egg-info/
 .eggs/
 build/
@@ -14,6 +16,7 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.xml
 htmlcov/
 .ipynb_checkpoints/
 
@@ -24,6 +27,13 @@ bundles/
 out/
 *.parquet
 *.duckdb
+
+# Datasets are fetched at build time, never committed (plan/001 §8.4)
+examples/*/data/
+tests/fixtures/downloaded/
+
+# uv lockfile - EvalLoop ships as a library, so resolution is left to the installer
+uv.lock
 
 # Model artifacts (adapters, checkpoints) - never committed
 adapters/

@@ -1,0 +1,56 @@
+# EvalLoop local stack.
+#
+#   metastore  - EvalLoop's own database: runs, results, manifests, cache.
+#   source-db  - stands in for a customer's production database. Read-only from
+#                EvalLoop's side; seeded in P1. Empty in P0.
+#
+# Non-default ports so this never collides with a Postgres already on 5432.
+#
+#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml down -v      # also drops data
+
+name: evalloop
+
+services:
+  metastore:
+    image: postgres:15-alpine
+    container_name: evalloop-metastore
+    environment:
+      POSTGRES_USER: evalloop
+      POSTGRES_PASSWORD: evalloop
+      POSTGRES_DB: evalloop
+    ports:
+      - "5433:5432"
+    volumes:
+      - metastore-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evalloop -d evalloop"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  source-db:
+    image: postgres:15-alpine
+    container_name: evalloop-source-db
+    environment:
+      POSTGRES_USER: product
+      POSTGRES_PASSWORD: product
+      POSTGRES_DB: product
+    ports:
+      - "5434:5432"
+    volumes:
+      - source-data:/var/lib/postgresql/data
+      # Seed scripts land here in P1; run automatically on first boot. They also
+      # create the SELECT-only `readonly` role that .env.example already expects.
+      - ./seed:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U product -d product"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  metastore-data:
+  source-data:
