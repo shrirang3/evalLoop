@@ -249,9 +249,15 @@ Pre-alpha, building P0.
 | P0.7 | ⬜ | Exact-match evaluator, judge client, one LLM question |
 | P0.8 | ⬜ | Example project and end-to-end acceptance test |
 
-Design: [`plan/000-build-plan.md`](plan/000-build-plan.md) (P0 → P6, plus P7+ roadmap) and
-[`plan/001-trusted-judge-architecture.md`](plan/001-trusted-judge-architecture.md), which supersedes
-parts of it.
+**Code layout, invariants, extension points:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
+**Design and decisions:** [`plan/000-build-plan.md`](plan/000-build-plan.md) (P0 → P6, plus P7+
+roadmap) and [`plan/001-trusted-judge-architecture.md`](plan/001-trusted-judge-architecture.md),
+which supersedes parts of it.
+
+```bash
+make install && make check     # sync deps, then lint + mypy --strict + tests
+make up                        # metastore + stand-in source database
+```
 
 **Stack:** Python 3.11+ · Pydantic v2 · Postgres + SQLAlchemy 2 + Alembic · Parquet · Typer + Rich ·
 httpx · TRL/peft/transformers (optional `[train]`)

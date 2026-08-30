@@ -32,8 +32,6 @@ out/
 examples/*/data/
 tests/fixtures/downloaded/
 
-# uv lockfile - EvalLoop ships as a library, so resolution is left to the installer
-uv.lock
 
 # Model artifacts (adapters, checkpoints) - never committed
 adapters/
