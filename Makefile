@@ -6,7 +6,7 @@
 COMPOSE := docker compose -f docker/docker-compose.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help install up down logs psql lint format typecheck test cov check clean
+.PHONY: help install up down logs psql reset-db lint format typecheck test itest cov check clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -28,6 +28,10 @@ logs: ## Tail the stack logs
 psql: ## Open a psql shell on the metastore
 	$(COMPOSE) exec metastore psql -U evalloop -d evalloop
 
+reset-db: ## Drop and rebuild the metastore schema (clears all rows)
+	uv run alembic downgrade base
+	uv run alembic upgrade head
+
 lint: ## Ruff check
 	uv run ruff check evalloop/ tests/
 
@@ -39,6 +43,9 @@ typecheck: ## mypy --strict
 
 test: ## Unit tests only (no Docker required)
 	uv run pytest -q -m "not integration and not gpu"
+
+itest: up ## Integration tests (needs the compose stack)
+	uv run pytest -q -m integration
 
 cov: ## Unit tests with a coverage report
 	uv run pytest -q -m "not integration and not gpu" \

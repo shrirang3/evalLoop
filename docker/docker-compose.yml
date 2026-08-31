@@ -4,7 +4,9 @@
 #   source-db  - stands in for a customer's production database. Read-only from
 #                EvalLoop's side; seeded in P1. Empty in P0.
 #
-# Non-default ports so this never collides with a Postgres already on 5432.
+# Host ports are overridable, because 5432/5433 are commonly already taken by
+# another project's stack:
+#   EVALLOOP_METASTORE_PORT=5442  EVALLOOP_SOURCE_PORT=5443
 #
 #   docker compose -f docker/docker-compose.yml up -d
 #   docker compose -f docker/docker-compose.yml down -v      # also drops data
@@ -20,7 +22,7 @@ services:
       POSTGRES_PASSWORD: evalloop
       POSTGRES_DB: evalloop
     ports:
-      - "5433:5432"
+      - "${EVALLOOP_METASTORE_PORT:-5442}:5432"
     volumes:
       - metastore-data:/var/lib/postgresql/data
     healthcheck:
@@ -38,7 +40,7 @@ services:
       POSTGRES_PASSWORD: product
       POSTGRES_DB: product
     ports:
-      - "5434:5432"
+      - "${EVALLOOP_SOURCE_PORT:-5443}:5432"
     volumes:
       - source-data:/var/lib/postgresql/data
       # Seed scripts land here in P1; run automatically on first boot. They also

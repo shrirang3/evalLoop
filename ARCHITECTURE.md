@@ -33,7 +33,7 @@ The one deliberate exception is `contracts/protocols.py`, which imports `contrac
 | Module | Owns | State |
 |---|---|---|
 | `contracts/` | Trace, EvalResult, config schemas, `Evaluator`/`Judge` protocols | ✅ P0.2–P0.3 |
-| `store/` | SQLAlchemy models, Alembic migrations, content-addressed artifacts | ⬜ P0.4 |
+| `store/` | SQLAlchemy models, Alembic migrations, content-addressed artifacts | ✅ P0.4 |
 | `ingest/` | Connectors (jsonl, csv, postgres, pyiter), mapping, redaction, splits | ⬜ P0.6 / P1 |
 | `evaluate/` | Registry, runner, deterministic matchers, LLM question and rubric evaluators | ⬜ P0.7 / P2 |
 | `judge/` | HTTP client, provider adapters, response parsing, version hashing | ⬜ P0.7 / P2 |
@@ -64,6 +64,24 @@ training rows        SFT or DPO JSONL, each stamped with signal provenance.
 ```
 
 ## Where state lives
+
+### Immutability
+
+`snapshot` and `feedback_dataset` are guarded by a PL/pgSQL trigger that raises on UPDATE and DELETE
+(migration `0001`). Both are cited as evidence: a judgecard only means what it said if nothing could
+have edited the snapshot underneath it, and a training run can only name which rows it saw if its
+dataset row cannot be rewritten. An application-level check is bypassed by the next person with `psql`
+open, so the guard is in the database.
+
+Consequence worth knowing: test rows written to those tables cannot be cleaned up afterwards. The
+`pg_session` fixture wraps each test in a transaction and rolls back; `make reset-db` rebuilds the
+schema when a stray row does land.
+
+### Server defaults
+
+Every NOT NULL column with a default declares `server_default` as well as `default`. A Python-side
+default never reaches Postgres, so `psql`, raw SQL, and any non-SQLAlchemy client would hit a NOT NULL
+violation on a column that looks defaulted in the model.
 
 | Kind | Home | Why |
 |---|---|---|
@@ -105,7 +123,11 @@ The README lists fourteen non-negotiable rules. Each is enforced in code, not by
 | Base provider ≠ judge provider | `check_integrity()` in `contracts/project.py` |
 | Held-out questions never reach training | `holdout` flag on both evaluator specs; asserted in P4 |
 | Deterministic checks cannot be judge-influenced | `EvalContext.judge` is `None` for them |
-| Unpriced models cost `None`, not `0.0` | `TokenUsage.cost_usd` default |
+| Unpriced models cost `None`, not `0.0` | `TokenUsage.cost_usd` default; `eval_result.cost_usd` nullable |
+| Snapshots and datasets are immutable | UPDATE/DELETE trigger, migration `0001` |
+| A trace cannot be in two splits | `uq_split_assignment_trace` |
+| Results record their evaluator version | `eval_result.evaluator_version` NOT NULL |
+| Re-ingesting identical data is a no-op | unique `snapshot.source_fingerprint` + `upsert_snapshot` |
 
 ## Extension points
 
@@ -139,11 +161,15 @@ normal and must not crash a run, while a typo'd path is a config bug and must be
 
 | Layer | Marker | Needs |
 |---|---|---|
-| Unit | none | nothing — `make test` |
-| Integration | `@pytest.mark.integration` | the compose stack |
+| Unit | none | nothing — `make test`. Schema built from metadata on in-memory SQLite |
+| Integration | `@pytest.mark.integration` | the compose stack — `make itest` |
 | GPU | `@pytest.mark.gpu` | a CUDA device |
 
 `make check` runs lint, `mypy --strict`, and the unit suite — the same three commands CI runs.
+
+Triggers, check constraints, and JSONB are Postgres-only, so anything testing them is marked
+`integration`. Running those against SQLite would produce a green suite that proved nothing, which is
+why `pg_engine` skips loudly rather than falling back.
 
 Two testing commitments from the plan:
 
