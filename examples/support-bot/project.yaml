@@ -1,0 +1,21 @@
+name: support-bot
+description: Refund and cancellation support agent
+
+source:
+  type: jsonl
+  path: examples/support-bot/traces.jsonl
+
+mapping:
+  trace_id: id
+  input.user_request: user_transcript
+  output.text: assistant_transcript
+
+models:
+  base:
+    provider: huggingface
+    model: Qwen/Qwen2.5-7B-Instruct
+
+integrity:
+  require_distinct_providers: [base, judge]
+  gate:
+    holdout_questions: [escalation_correct]

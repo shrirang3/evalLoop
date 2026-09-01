@@ -15,7 +15,7 @@ trusted-judge design rests on (plan/001 section 3.2):
 from __future__ import annotations
 
 import hashlib
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -156,7 +156,16 @@ class LLMQuestionSpec(BaseModel):
         }
 
 
-SuiteEvaluator = EvaluatorSpec | LLMQuestionSpec
+SuiteEvaluator = Annotated[
+    EvaluatorSpec | LLMQuestionSpec,
+    Field(discriminator="type"),
+]
+"""Discriminated on `type`, not a plain union.
+
+An undiscriminated union makes Pydantic try every member and report the failures
+of all of them, so one typo'd key yields six errors - and the branch name lands
+in the error path, where it has no corresponding line in the YAML. Discriminating
+means one mistake produces one error, pointing at the token that caused it."""
 
 
 class EvalSuite(BaseModel):

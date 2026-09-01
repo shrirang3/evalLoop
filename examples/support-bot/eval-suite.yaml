@@ -1,0 +1,20 @@
+suite: support-bot-v1
+
+evaluators:
+  - id: tool_call_match
+    type: json_match
+    actual: output.tool_calls
+    expected: ground_truth.tool_calls
+    options:
+      ignore_order: true
+
+  - id: policy_followed
+    type: llm_question
+    question: Did the agent follow the refund policy?
+    inputs:
+      transcript: output.text
+
+  - id: escalation_correct
+    type: llm_question
+    question: Should this have been escalated to a human?
+    holdout: true

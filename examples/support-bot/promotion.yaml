@@ -1,0 +1,39 @@
+# Promotion gate. The candidate has to clear every condition under `all`.
+#
+# Note what is deliberately absent: no condition on `policy_followed`. That
+# question is a holdout in eval-suite.yaml, so it is scored here and never
+# compiled into training data - which is what keeps the judge's opinion of it
+# informative even though the same judge minted the training pairs.
+
+all:
+  # A deterministic check the judge cannot influence. Required by
+  # integrity.gate.deterministic_required in project.yaml.
+  - metric: tool_call_match
+    baseline_delta: 0.02
+    significant: true
+
+  # The holdout question. Training never saw this rubric.
+  - metric: escalation_correct
+    baseline_delta: 0.0
+
+  # Built-ins. A candidate that improves quality while doubling cost or timing
+  # out on a tenth of calls has not improved.
+  - metric: invalid_output_rate
+    op: "<="
+    absolute: 0.02
+
+  - metric: p95_latency_ms
+    op: "<="
+    absolute: 2500
+
+slices:
+  # A candidate that improves overall while breaking one language has not
+  # improved. Slices below min_n report INSUFFICIENT DATA rather than passing.
+  - field: metadata.language
+    no_regression: true
+    min_n: 25
+    tolerance: 0.02
+
+  - field: metadata.category
+    no_regression: true
+    min_n: 25

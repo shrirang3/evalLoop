@@ -244,7 +244,7 @@ Pre-alpha, building P0.
 | P0.2 | ✅ | Trace and result contracts |
 | P0.3 | ✅ | Config contracts for all five YAML files |
 | P0.4 | ✅ | Metastore (13 tables), Alembic migration, artifact store |
-| P0.5 | ⬜ | `evalloop validate` with line-accurate errors |
+| P0.5 | ✅ | `evalloop validate` with line-accurate errors |
 | P0.6 | ⬜ | JSONL ingest |
 | P0.7 | ⬜ | Exact-match evaluator, judge client, one LLM question |
 | P0.8 | ⬜ | Example project and end-to-end acceptance test |

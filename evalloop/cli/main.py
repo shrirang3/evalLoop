@@ -1,15 +1,18 @@
 """EvalLoop command-line entry point.
 
-Subcommands are registered here as each phase lands. P0 wires up the app itself;
-`validate` arrives in P0.5, `ingest` in P0.6, and `evaluate` in P0.7.
+Subcommands are registered here as each phase lands. `ingest` arrives in P0.6
+and `evaluate` in P0.7.
 """
 
 from __future__ import annotations
+
+from typing import Annotated
 
 import typer
 from rich.console import Console
 
 from evalloop import __version__
+from evalloop.cli.validate import validate_command
 
 app = typer.Typer(
     name="evalloop",
@@ -19,6 +22,8 @@ app = typer.Typer(
 )
 
 console = Console()
+
+app.command("validate")(validate_command)
 
 
 def _version_callback(value: bool) -> None:
@@ -30,14 +35,16 @@ def _version_callback(value: bool) -> None:
 @app.callback()
 def main(
     # Consumed by the eager callback above; the parameter itself is unused.
-    version: bool = typer.Option(
-        False,
-        "--version",
-        "-V",
-        help="Show the installed version and exit.",
-        callback=_version_callback,
-        is_eager=True,
-    ),
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            "-V",
+            help="Show the installed version and exit.",
+            callback=_version_callback,
+            is_eager=True,
+        ),
+    ] = False,
 ) -> None:
     """EvalLoop."""
 

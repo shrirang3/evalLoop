@@ -6,7 +6,7 @@
 COMPOSE := docker compose -f docker/docker-compose.yml
 
 .DEFAULT_GOAL := help
-.PHONY: help install up down logs psql reset-db lint format typecheck test itest cov check clean
+.PHONY: help install up down logs psql reset-db lint format typecheck test itest cov examples check clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -51,7 +51,10 @@ cov: ## Unit tests with a coverage report
 	uv run pytest -q -m "not integration and not gpu" \
 		--cov=evalloop --cov-report=term-missing
 
-check: lint typecheck test ## Everything CI runs
+examples: ## Validate the shipped example configs
+	uv run evalloop validate examples/support-bot/*.yaml
+
+check: lint typecheck test examples ## Everything CI runs
 
 clean: ## Remove caches and coverage output
 	rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage htmlcov coverage.xml

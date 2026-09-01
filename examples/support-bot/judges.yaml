@@ -1,0 +1,5 @@
+judges:
+  default:
+    provider: anthropic
+    model: claude-sonnet-5
+    temperature: 0.0

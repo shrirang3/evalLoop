@@ -12,6 +12,8 @@ Strictly one way. Nothing lower imports anything higher.
 ```
 cli/                      Typer commands. Thin - argument parsing and rendering only.
   ↓
+config/                   YAML loading and validation. Reads contracts/, nothing else.
+  ↓
 promote/  train/  feedback/  judgecard/     Phase modules. Independent of each other.
   ↓
 evaluate/  ingest/  judge/                  Execution: run checks, read data, call providers.
@@ -41,7 +43,8 @@ The one deliberate exception is `contracts/protocols.py`, which imports `contrac
 | `feedback/` | Policy evaluation, target resolution, SFT/DPO compilers, leakage checks | ⬜ P4 |
 | `train/` | `TrainerBackend` interface, TRL LoRA backend, candidate inference | ⬜ P5 |
 | `promote/` | Gate DSL evaluation, baseline comparison, experiment bundle | ⬜ P6 |
-| `cli/` | Command surface | 🟡 app only |
+| `config/` | YAML loading, kind detection, Pydantic errors mapped to source lines | ✅ P0.5 |
+| `cli/` | Command surface | 🟡 `validate` only |
 
 Every directory exists with an `__init__.py` so the layout is visible from day one and imports do not
 move as phases land.
