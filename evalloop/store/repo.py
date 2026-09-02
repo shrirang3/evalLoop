@@ -28,6 +28,7 @@ from evalloop.store.models import (
 )
 
 __all__ = [
+    "find_snapshot",
     "new_id",
     "record_results",
     "source_fingerprint",
@@ -61,6 +62,17 @@ def source_fingerprint(
         "content_hashes": hashes,
     }
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def find_snapshot(session: Session, fingerprint: str) -> Snapshot | None:
+    """The snapshot for this exact source data, if it was already ingested.
+
+    Exposed separately from `upsert_snapshot` so a caller can find out *before*
+    doing expensive work - writing a multi-gigabyte Parquet file and then
+    discovering the snapshot already exists leaves an artifact nothing
+    references.
+    """
+    return session.scalar(select(Snapshot).where(Snapshot.source_fingerprint == fingerprint))
 
 
 def upsert_project(session: Session, *, name: str, config_yaml: str) -> Project:
@@ -99,7 +111,7 @@ def upsert_snapshot(
     splitting is P1. The rows are written now so the unique constraint on
     (snapshot_id, trace_id) is in force from the first ingest.
     """
-    existing = session.scalar(select(Snapshot).where(Snapshot.source_fingerprint == fingerprint))
+    existing = find_snapshot(session, fingerprint)
     if existing is not None:
         return existing, False
 

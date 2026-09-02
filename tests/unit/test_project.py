@@ -116,3 +116,21 @@ def test_empty_holdout_id_is_reported() -> None:
     )
     violations = check_integrity(project, {})
     assert any("holdout_questions" in v for v in violations)
+
+
+def test_malformed_mapping_target_is_rejected_at_validate_time() -> None:
+    """Finding out about `input..user_request` after a connection is open and
+    half a file is read is strictly worse than finding out from validate."""
+    with pytest.raises(ValidationError, match="not a valid path"):
+        ProjectConfig.model_validate({**PROJECT, "mapping": {"trace_id": "id", "input..x": "y"}})
+
+    with pytest.raises(ValidationError, match="not a valid path"):
+        ProjectConfig.model_validate({**PROJECT, "mapping": {"trace_id": "id", "a-b": "y"}})
+
+
+def test_indexed_mapping_targets_are_accepted() -> None:
+    """The voice case: `output.artifacts[0].uri` is a legitimate target."""
+    project = ProjectConfig.model_validate(
+        {**PROJECT, "mapping": {"trace_id": "id", "output.artifacts[0].uri": "recording_url"}}
+    )
+    assert "output.artifacts[0].uri" in project.mapping

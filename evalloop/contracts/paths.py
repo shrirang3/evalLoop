@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from typing import Any, Final
 
-__all__ = ["MISSING", "Missing", "path_exists", "resolve_path", "split_path"]
+__all__ = ["MISSING", "Missing", "path_exists", "resolve_path", "set_path", "split_path"]
 
 
 class Missing:
@@ -117,3 +117,69 @@ def resolve_path(data: Any, path: str) -> Any:
 def path_exists(data: Any, path: str) -> bool:
     """True if ``path`` resolves, including to a stored ``None``."""
     return not isinstance(resolve_path(data, path), Missing)
+
+
+def set_path(target: dict[str, Any], path: str, value: Any) -> None:
+    """Write `value` at `path`, creating intermediate containers as needed.
+
+    The inverse of :func:`resolve_path`, and the reason the ingest mapping can
+    be written the way a user thinks about it - `input.user_request:
+    user_transcript` reads as "our field comes from their column" without the
+    user having to nest anything by hand.
+
+    Lists grow to fit an index rather than raising, since `output.artifacts[0]`
+    is a perfectly reasonable thing to map into an empty trace. Gaps are filled
+    with None, which then fails Trace validation with a real message if the
+    caller skipped an element they needed.
+    """
+    parts = split_path(path)
+    if isinstance(parts[0], int):
+        raise ValueError(f"path {path!r} cannot start with a list index")
+
+    container: Any = target
+    for index, part in enumerate(parts[:-1]):
+        nxt = parts[index + 1]
+        child = _ensure_child(container, part, want_list=isinstance(nxt, int))
+        container = child
+
+    _assign(container, parts[-1], value)
+
+
+def _ensure_child(container: Any, part: str | int, *, want_list: bool) -> Any:
+    """Fetch container[part], creating it as a dict or list if absent."""
+    empty: Any = [] if want_list else {}
+
+    if isinstance(part, int):
+        if not isinstance(container, list):
+            raise TypeError(f"cannot index into {type(container).__name__} with [{part}]")
+        _grow(container, part)
+        if container[part] is None:
+            container[part] = empty
+        return container[part]
+
+    if not isinstance(container, dict):
+        raise TypeError(f"cannot set key {part!r} on {type(container).__name__}")
+    existing = container.get(part)
+    if existing is None:
+        container[part] = empty
+        return container[part]
+    return existing
+
+
+def _assign(container: Any, part: str | int, value: Any) -> None:
+    if isinstance(part, int):
+        if not isinstance(container, list):
+            raise TypeError(f"cannot index into {type(container).__name__} with [{part}]")
+        _grow(container, part)
+        container[part] = value
+        return
+    if not isinstance(container, dict):
+        raise TypeError(f"cannot set key {part!r} on {type(container).__name__}")
+    container[part] = value
+
+
+def _grow(items: list[Any], index: int) -> None:
+    if index < 0:
+        raise ValueError("negative list indices cannot be written to")
+    while len(items) <= index:
+        items.append(None)

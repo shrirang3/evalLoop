@@ -15,6 +15,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from evalloop.contracts.judgeconf import JudgeConfig
+from evalloop.contracts.paths import split_path
 
 ProviderRole = Literal["base", "judge"]
 _DEFAULT_PROVIDER_ROLES: list[ProviderRole] = ["base", "judge"]
@@ -171,6 +172,21 @@ class ProjectConfig(BaseModel):
 
     models: dict[Literal["base"], BaseModelSpec] | None = None
     integrity: IntegrityConfig = Field(default_factory=IntegrityConfig)
+
+    @model_validator(mode="after")
+    def _mapping_targets_are_wellformed(self) -> ProjectConfig:
+        """Reject a malformed target path at validate time, not at ingest.
+
+        `input..user_request` is a typo, and finding out about it after a
+        connection has been opened and half a file read is strictly worse than
+        finding out from `evalloop validate`.
+        """
+        for target in self.mapping:
+            try:
+                split_path(target)
+            except ValueError as exc:
+                raise ValueError(f"mapping target {target!r} is not a valid path: {exc}") from exc
+        return self
 
     @model_validator(mode="after")
     def _trace_id_is_mapped(self) -> ProjectConfig:

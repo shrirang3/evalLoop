@@ -113,3 +113,17 @@ def test_every_s3_method_is_explicitly_unimplemented(method: str, tmp_path: Path
     arg = tmp_path if method == "put_file" else f"cas://{'a' * 64}"
     with pytest.raises(NotImplementedError):
         getattr(store, method)(arg)
+
+
+def test_constructing_a_store_does_not_create_the_directory(artifact_root: Path) -> None:
+    """A dry run builds a store and writes nothing. Creating an empty
+    artifacts/ directory would already have touched the filesystem it promised
+    to leave alone."""
+    LocalArtifactStore(artifact_root)
+    assert not artifact_root.exists()
+
+
+def test_the_first_write_creates_the_tree(artifact_root: Path) -> None:
+    store = LocalArtifactStore(artifact_root / "nested" / "deeper")
+    store.put_bytes(PAYLOAD)
+    assert (artifact_root / "nested" / "deeper").is_dir()

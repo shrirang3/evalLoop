@@ -25,6 +25,7 @@ from evalloop.store.models import (
     TrainRun,
 )
 from evalloop.store.repo import (
+    find_snapshot,
     new_id,
     record_results,
     source_fingerprint,
@@ -33,6 +34,7 @@ from evalloop.store.repo import (
     upsert_project,
     upsert_snapshot,
 )
+from evalloop.store.traces import read_traces, write_traces
 
 __all__ = [
     "DEFAULT_DATABASE_URL",
@@ -55,9 +57,11 @@ __all__ = [
     "TraceRow",
     "TrainRun",
     "database_url",
+    "find_snapshot",
     "make_engine",
     "new_id",
     "parse_uri",
+    "read_traces",
     "record_results",
     "session_scope",
     "source_fingerprint",
@@ -65,4 +69,5 @@ __all__ = [
     "upsert_judge_config",
     "upsert_project",
     "upsert_snapshot",
+    "write_traces",
 ]

@@ -56,8 +56,10 @@ class LocalArtifactStore(ArtifactStore):
     """
 
     def __init__(self, root: Path | str) -> None:
+        # Deliberately no mkdir. Constructing a store is not a write, and a
+        # dry run that creates an empty artifacts/ directory has already
+        # touched the filesystem it promised not to. Writes create the tree.
         self.root = Path(root)
-        self.root.mkdir(parents=True, exist_ok=True)
 
     def _path_for(self, digest: str) -> Path:
         return self.root / digest[:2] / digest[2:4] / digest

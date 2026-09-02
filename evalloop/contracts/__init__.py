@@ -6,7 +6,14 @@ from evalloop.contracts.judgeconf import (
     JudgeProvider,
     judge_version_hash,
 )
-from evalloop.contracts.paths import MISSING, Missing, path_exists, resolve_path, split_path
+from evalloop.contracts.paths import (
+    MISSING,
+    Missing,
+    path_exists,
+    resolve_path,
+    set_path,
+    split_path,
+)
 from evalloop.contracts.project import (
     BaseModelSpec,
     GateIntegrity,
@@ -83,5 +90,6 @@ __all__ = [
     "judge_version_hash",
     "path_exists",
     "resolve_path",
+    "set_path",
     "split_path",
 ]

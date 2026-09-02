@@ -36,7 +36,7 @@ The one deliberate exception is `contracts/protocols.py`, which imports `contrac
 |---|---|---|
 | `contracts/` | Trace, EvalResult, config schemas, `Evaluator`/`Judge` protocols | ✅ P0.2–P0.3 |
 | `store/` | SQLAlchemy models, Alembic migrations, content-addressed artifacts | ✅ P0.4 |
-| `ingest/` | Connectors (jsonl, csv, postgres, pyiter), mapping, redaction, splits | ⬜ P0.6 / P1 |
+| `ingest/` | Connectors (jsonl done; csv/postgres/pyiter P1), mapping, redaction, splits | 🟡 P0.6 |
 | `evaluate/` | Registry, runner, deterministic matchers, LLM question and rubric evaluators | ⬜ P0.7 / P2 |
 | `judge/` | HTTP client, provider adapters, response parsing, version hashing | ⬜ P0.7 / P2 |
 | `judgecard/` | Judge health probes, agreement metrics, bias probes, reports | ⬜ P3 |
@@ -90,6 +90,16 @@ violation on a column that looks defaulted in the model.
 |---|---|---|
 | Runs, results, manifests, cache | Postgres | needs querying and slicing: "every Hindi refund failure last Tuesday" |
 | Traces and results in bulk | Parquet on the artifact store | wide and repetitive; Postgres holds pointers and aggregates |
+
+Trace bodies are a JSON string in a Parquet `payload` column rather than a Parquet schema. `ground_truth`
+and `metadata` are free-form and differ per customer, so a real schema would have to be inferred per
+snapshot — making two snapshots of the same product incompatible — or flattened, which loses the shape.
+`trace_id`, `split`, and `content_hash` stay genuinely columnar for filtering.
+
+`ingested_at` and `content_hash` are excluded from the payload. The first because every trace in a
+snapshot shares `snapshot.created_at`, and keeping a per-trace copy made identical data serialize to
+different bytes — which defeated content addressing entirely. The second because it is derived:
+recomputing it on read turns the round trip into an integrity check against the stored column.
 | Audio, images, model adapters | Artifact store, content-addressed | large binaries; identical content is stored once |
 | Secrets | Environment variables only | a key in a config file reaches git, the metastore, and the bundle |
 

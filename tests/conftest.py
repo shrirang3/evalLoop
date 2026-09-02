@@ -9,6 +9,7 @@ through.
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -77,3 +78,14 @@ def pg_session(pg_engine: Engine) -> Iterator[Session]:
 @pytest.fixture
 def artifact_root(tmp_path: Path) -> Path:
     return tmp_path / "artifacts"
+
+
+@pytest.fixture
+def unique_name(request: pytest.FixtureRequest) -> str:
+    """A per-test project name.
+
+    Ingest commits for real, and `snapshot` rows cannot be deleted - that is the
+    point of them - so tests cannot share a project without colliding on the
+    unique name.
+    """
+    return f"t-{uuid.uuid4().hex[:12]}"

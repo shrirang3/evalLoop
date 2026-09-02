@@ -1,14 +1,32 @@
+# Ingestion for a refund/cancellation support agent.
+#
+# The source columns are the product's own names. Nothing here asks the product
+# to change: `mapping` reads "our field comes from their column", and paths are
+# resolved relative to this file so the directory can live anywhere.
+
 name: support-bot
 description: Refund and cancellation support agent
 
 source:
   type: jsonl
-  path: examples/support-bot/traces.jsonl
+  path: traces.jsonl
 
 mapping:
   trace_id: id
   input.user_request: user_transcript
+  input.system_prompt: system_prompt
   output.text: assistant_transcript
+  output.tool_calls: tool_calls
+
+  # Optional. Present on some rows and absent on others, which is the normal
+  # state of affairs - a trace with no ground truth is still fully valid.
+  ground_truth.expected_response: expected_reply
+  ground_truth.tool_calls: expected_tool_calls
+  ground_truth.policy_followed: human_policy_verdict
+
+  metadata.language: language
+  metadata.category: category
+  metadata.customer_tier: tier
 
 models:
   base:
@@ -16,6 +34,11 @@ models:
     model: Qwen/Qwen2.5-7B-Instruct
 
 integrity:
+  # A judge favours its own family's outputs, so the model under test and the
+  # model grading it must not come from the same provider.
   require_distinct_providers: [base, judge]
   gate:
+    # Scored at the gate, never compiled into training data.
     holdout_questions: [escalation_correct]
+    deterministic_required: true
+    block_on_divergence: true

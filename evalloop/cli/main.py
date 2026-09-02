@@ -1,7 +1,7 @@
 """EvalLoop command-line entry point.
 
-Subcommands are registered here as each phase lands. `ingest` arrives in P0.6
-and `evaluate` in P0.7.
+Subcommands are registered here as each phase lands. `evaluate` arrives in
+P0.7.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import typer
 from rich.console import Console
 
 from evalloop import __version__
+from evalloop.cli.ingest import ingest_command, snapshot_app
 from evalloop.cli.validate import validate_command
 
 app = typer.Typer(
@@ -24,6 +25,8 @@ app = typer.Typer(
 console = Console()
 
 app.command("validate")(validate_command)
+app.command("ingest")(ingest_command)
+app.add_typer(snapshot_app, name="snapshot")
 
 
 def _version_callback(value: bool) -> None:
