@@ -37,8 +37,8 @@ The one deliberate exception is `contracts/protocols.py`, which imports `contrac
 | `contracts/` | Trace, EvalResult, config schemas, `Evaluator`/`Judge` protocols | ✅ P0.2–P0.3 |
 | `store/` | SQLAlchemy models, Alembic migrations, content-addressed artifacts | ✅ P0.4 |
 | `ingest/` | Connectors (jsonl done; csv/postgres/pyiter P1), mapping, redaction, splits | 🟡 P0.6 |
-| `evaluate/` | Registry, runner, deterministic matchers, LLM question and rubric evaluators | ⬜ P0.7 / P2 |
-| `judge/` | HTTP client, provider adapters, response parsing, version hashing | ⬜ P0.7 / P2 |
+| `evaluate/` | Registry, runner, deterministic matchers, LLM question evaluator | 🟡 P0.7 |
+| `judge/` | HTTP client, provider adapters, response parsing, cache | ✅ P0.7 |
 | `judgecard/` | Judge health probes, agreement metrics, bias probes, reports | ⬜ P3 |
 | `feedback/` | Policy evaluation, target resolution, SFT/DPO compilers, leakage checks | ⬜ P4 |
 | `train/` | `TrainerBackend` interface, TRL LoRA backend, candidate inference | ⬜ P5 |
@@ -137,10 +137,31 @@ The README lists fourteen non-negotiable rules. Each is enforced in code, not by
 | Held-out questions never reach training | `holdout` flag on both evaluator specs; asserted in P4 |
 | Deterministic checks cannot be judge-influenced | `EvalContext.judge` is `None` for them |
 | Unpriced models cost `None`, not `0.0` | `TokenUsage.cost_usd` default; `eval_result.cost_usd` nullable |
+| A check with no ground truth is not a failure | `not_applicable()`; `passed IS NULL` |
+| A judge never takes down a run | `JudgeClient.ask` returns, never raises; `_evaluate_safely` in the runner |
+| Failed, errored, and unusable stay distinct | `passed=False` vs `error` vs `invalid_output` |
+| A cache hit costs nothing | `JudgeClient.ask` zeroes usage on a hit |
+| A rubric edit cannot reuse old answers | cache key includes `judge_version_hash` |
 | Snapshots and datasets are immutable | UPDATE/DELETE trigger, migration `0001` |
 | A trace cannot be in two splits | `uq_split_assignment_trace` |
 | Results record their evaluator version | `eval_result.evaluator_version` NOT NULL |
 | Re-ingesting identical data is a no-op | unique `snapshot.source_fingerprint` + `upsert_snapshot` |
+
+## The three outcomes an evaluation can have
+
+Kept apart everywhere, because they call for different action.
+
+| Outcome | Row | Means |
+|---|---|---|
+| **Failed** | `passed=False` | the model got it wrong — trainable |
+| **Not applicable** | `passed=None`, `error=None` | nothing to compare against, usually no ground truth. Coverage, not quality |
+| **Errored** | `error` set | the evaluation broke — a bug or an outage, never the model's fault |
+| **Invalid output** | `invalid_output=True` | the judge answered unusably — a property of the judge |
+
+`EvalResult.is_failure` is true only for the first, so P4 can never compile the
+others into training data. `QuestionSummary.pass_rate` divides by decided results
+only — counting not-applicable rows would let a check that can see a tenth of the
+data report 10% and look terrible.
 
 ## Extension points
 

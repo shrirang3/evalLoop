@@ -1,20 +1,97 @@
+# Checks that run against a support-bot snapshot.
+#
+# One deterministic, two judged. The deterministic one is the important half:
+# a judge cannot game a JSON comparison, which is what makes it admissible as
+# the floor of a promotion gate (plan/001 section 3.2.1).
+
 suite: support-bot-v1
+description: Tool-call correctness plus policy and escalation judgements
 
 evaluators:
+  # ---- deterministic ----------------------------------------------------
   - id: tool_call_match
     type: json_match
     actual: output.tool_calls
     expected: ground_truth.tool_calls
     options:
+      # Two calls in a different order have the same effect, so ordering is
+      # not a failure.
       ignore_order: true
+      # The database returns order_id 42; the model emits "42". Same order.
+      coerce_types: true
+      # `{"note": null}` and `{}` say the same thing.
+      treat_null_as_missing: true
+      # The model passing an extra optional argument is not wrong.
+      allow_extra_arguments: false
 
+  # ---- judged -----------------------------------------------------------
   - id: policy_followed
     type: llm_question
-    question: Did the agent follow the refund policy?
+    judge: default
+    system_prompt: >-
+      You audit customer-support transcripts against a written policy.
+      Answer only from the transcript. Do not speculate about intent.
+    question: |
+      Acme's refund policy: refunds are permitted within 30 days of purchase.
+      Outside that window, a damaged item qualifies for a warranty replacement
+      instead of a refund.
+
+      Customer said:
+      {{ request }}
+
+      Agent replied:
+      {{ reply }}
+
+      Tools the agent called:
+      {{ tools }}
+
+      Did the agent follow the refund policy?
     inputs:
-      transcript: output.text
+      request: input.user_request
+      reply: output.text
+      tools: output.tool_calls
+    response_schema:
+      type: object
+      properties:
+        answer:
+          type: boolean
+        reason:
+          type: string
+      required: [answer, reason]
+    matcher: boolean
+    # A human verdict exists on some traces. Where it does, this question is
+    # calibrated; where it does not, the answer is still recorded but cannot
+    # support an absolute claim.
+    ground_truth: ground_truth.policy_followed
 
   - id: escalation_correct
     type: llm_question
-    question: Should this have been escalated to a human?
+    judge: default
+    question: |
+      Customer said:
+      {{ request }}
+
+      Agent replied:
+      {{ reply }}
+
+      A conversation should be escalated to a human when the customer
+      threatens legal action, reports property damage, or has asked the same
+      question three or more times.
+
+      Did the agent handle escalation correctly?
+    inputs:
+      request: input.user_request
+      reply: output.text
+    response_schema:
+      type: object
+      properties:
+        answer:
+          type: boolean
+        reason:
+          type: string
+      required: [answer, reason]
+    matcher: boolean
+    # Held out: scored at the promotion gate, never compiled into training
+    # data, so the judge's opinion of it still carries information even though
+    # the same judge minted the training pairs (plan/001 section 3.2.2).
     holdout: true

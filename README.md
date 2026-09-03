@@ -246,7 +246,7 @@ Pre-alpha, building P0.
 | P0.4 | ✅ | Metastore (13 tables), Alembic migration, artifact store |
 | P0.5 | ✅ | `evalloop validate` with line-accurate errors |
 | P0.6 | ✅ | JSONL ingest, mapping, Parquet trace store |
-| P0.7 | ⬜ | Exact-match evaluator, judge client, one LLM question |
+| P0.7 | ✅ | Deterministic + LLM evaluators, judge client, providers, cache |
 | P0.8 | ⬜ | Example project and end-to-end acceptance test |
 
 **Code layout, invariants, extension points:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
