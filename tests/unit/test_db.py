@@ -50,3 +50,11 @@ def test_session_scope_rolls_back_on_error(sqlite_engine: Engine) -> None:
     factory = sessionmaker(bind=sqlite_engine)
     with factory() as check:
         assert check.scalar(select(Project).where(Project.id == "p2")) is None
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\n"])
+def test_a_blank_url_falls_back_to_the_default(blank: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty value is not a configuration. Passing it to create_engine gives
+    an opaque parse error rather than the default."""
+    monkeypatch.setenv("EVALLOOP_DATABASE_URL", blank)
+    assert database_url() == DEFAULT_DATABASE_URL

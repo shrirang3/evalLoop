@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from evalloop.cli.main import app
@@ -126,3 +127,30 @@ def test_skipped_rows_are_counted_in_the_summary(tmp_path: Path) -> None:
     output = " ".join(result.output.split())
     assert "skipped 1" in output
     assert "trace_id" in output
+
+
+def test_dry_run_needs_no_database_at_all(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Checking a mapping should not require a metastore.
+
+    This is the failure CI caught: --dry-run built an engine it never used, so
+    with no database configured it died on URL parsing instead of printing the
+    mapped trace it was asked for.
+    """
+    monkeypatch.delenv("EVALLOOP_DATABASE_URL", raising=False)
+    directory = _project_dir(tmp_path)
+
+    result = runner.invoke(app, ["ingest", str(directory / "project.yaml"), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "dry run" in " ".join(result.output.split())
+
+
+def test_a_blank_database_url_is_treated_as_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exporting the variable as "" is how CI and shell scripts say "not
+    configured". Passing it through produced an opaque SQLAlchemy parse error."""
+    monkeypatch.setenv("EVALLOOP_DATABASE_URL", "")
+    directory = _project_dir(tmp_path)
+
+    result = runner.invoke(app, ["ingest", str(directory / "project.yaml"), "--dry-run"])
+    assert result.exit_code == 0, result.output

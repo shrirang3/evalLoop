@@ -19,8 +19,15 @@ DEFAULT_DATABASE_URL = "postgresql+psycopg://evalloop:evalloop@localhost:5442/ev
 
 
 def database_url() -> str:
-    """Metastore URL from the environment, falling back to the compose default."""
-    return os.environ.get("EVALLOOP_DATABASE_URL", DEFAULT_DATABASE_URL)
+    """Metastore URL from the environment, falling back to the compose default.
+
+    An empty or whitespace value counts as unset. Exporting the variable as ""
+    is how CI and shell scripts express "not configured", and passing that
+    string through to create_engine() produces an opaque SQLAlchemy parse error
+    instead of the default.
+    """
+    configured = os.environ.get("EVALLOOP_DATABASE_URL", "").strip()
+    return configured or DEFAULT_DATABASE_URL
 
 
 def make_engine(url: str | None = None, *, echo: bool = False) -> Engine:

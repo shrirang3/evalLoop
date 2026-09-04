@@ -49,7 +49,9 @@ def ingest_command(
 
     report = ingest(
         config.model,
-        engine=make_engine(),
+        # Not built for a dry run: it needs no database, so it must not require
+        # one to be reachable or even configured.
+        engine=None if dry_run else make_engine(),
         artifact_store=_artifact_store(),
         # Source paths are resolved relative to project.yaml, so a project
         # directory can be moved or checked out anywhere and still work.

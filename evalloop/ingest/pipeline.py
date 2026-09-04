@@ -104,14 +104,20 @@ def build_traces(
 def ingest(
     project: ProjectConfig,
     *,
-    engine: Engine,
+    engine: Engine | None,
     artifact_store: LocalArtifactStore,
     root: Path,
     config_yaml: str,
     limit: int | None = None,
     dry_run: bool = False,
 ) -> IngestReport:
-    """Ingest a project's source into an immutable snapshot."""
+    """Ingest a project's source into an immutable snapshot.
+
+    `engine` may be None for a dry run, which touches neither the database nor
+    the artifact store. Accepting None rather than requiring an unused engine is
+    what lets `--dry-run` work with nothing configured - checking a mapping
+    should not need a metastore.
+    """
     traces, report = build_traces(project, root=root, limit=limit)
 
     if not traces:
@@ -121,6 +127,9 @@ def ingest(
 
     if dry_run:
         return report
+
+    if engine is None:
+        raise ValueError("a real ingest needs a database engine")
 
     with session_scope(engine) as session:
         # Checked before writing anything. Producing a multi-gigabyte Parquet

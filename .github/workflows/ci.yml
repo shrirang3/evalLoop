@@ -60,8 +60,12 @@ jobs:
       - name: Validate the shipped example configs
         run: uv run evalloop validate examples/support-bot/*.yaml
 
-      # Unit tests first and without a database, so a failure here is
-      # unambiguous rather than possibly an infrastructure problem.
+      # Unit tests first, with the database URLs blanked. Two reasons: a
+      # failure here is unambiguously a code failure rather than possibly an
+      # infrastructure one, and it enforces that the unit suite genuinely does
+      # not touch Postgres. A blank value falls back to the local compose
+      # default, which is unreachable on a runner - so anything that reaches
+      # for a connection fails loudly instead of quietly using the service.
       - name: Unit tests
         run: uv run pytest -q -m "not integration and not gpu"
         env:
