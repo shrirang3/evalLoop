@@ -24,6 +24,25 @@ evaluators:
       # The model passing an extra optional argument is not wrong.
       allow_extra_arguments: false
 
+  # A coarser version of the same question: did it reach for the right tool,
+  # ignoring the arguments? The pair is instructive in both directions.
+  #
+  # sb-0421 calls cancel_order correctly and then also issues a refund, so this
+  # passes while tool_call_match fails. Two checks disagreeing like that is
+  # usually where the interesting failure is.
+  #
+  # And it shows why the list-level check is the one that belongs in a gate:
+  # an indexed path cannot see an empty list. On sb-0433 the agent called no
+  # tool at all, so `output.tool_calls[0].name` does not resolve and this
+  # reports "not applicable" - while tool_call_match compares [] against the
+  # expected call and correctly reports a failure.
+  - id: tool_name_match
+    type: exact_match
+    actual: output.tool_calls[0].name
+    expected: ground_truth.tool_calls[0].name
+    options:
+      lower: true
+
   # ---- judged -----------------------------------------------------------
   - id: policy_followed
     type: llm_question

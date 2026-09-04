@@ -1,0 +1,78 @@
+# CI runs exactly what `make check` and `make itest` run locally, so a green
+# local tree and a green pipeline mean the same thing.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Inside the runner the service is reachable on its default port, unlike the
+  # local compose stack which moves off 5432 to avoid collisions.
+  EVALLOOP_DATABASE_URL: postgresql+psycopg://evalloop:evalloop@localhost:5432/evalloop
+  EVALLOOP_TEST_DATABASE_URL: postgresql+psycopg://evalloop:evalloop@localhost:5432/evalloop
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      metastore:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: evalloop
+          POSTGRES_PASSWORD: evalloop
+          POSTGRES_DB: evalloop
+        ports: ["5432:5432"]
+        # Without this the first migration races the database's own startup.
+        options: >-
+          --health-cmd "pg_isready -U evalloop -d evalloop"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --extra dev --frozen
+
+      - name: Lint
+        run: uv run ruff check evalloop/ tests/
+
+      - name: Format
+        run: uv run ruff format --check evalloop/ tests/
+
+      - name: Types
+        run: uv run mypy evalloop/
+
+      - name: Validate the shipped example configs
+        run: uv run evalloop validate examples/support-bot/*.yaml
+
+      # Unit tests first and without a database, so a failure here is
+      # unambiguous rather than possibly an infrastructure problem.
+      - name: Unit tests
+        run: uv run pytest -q -m "not integration and not gpu"
+        env:
+          EVALLOOP_DATABASE_URL: ""
+          EVALLOOP_TEST_DATABASE_URL: ""
+
+      - name: Migrate
+        run: uv run alembic upgrade head
+
+      - name: Integration tests
+        run: uv run pytest -q -m integration
+
+      - name: Coverage
+        run: uv run pytest -q --cov=evalloop --cov-report=term-missing --cov-fail-under=95

@@ -102,7 +102,7 @@ def test_the_full_chain_writes_one_row_per_trace_and_evaluator(env: Path, sessio
     count = session.scalar(
         select(func.count()).select_from(EvalResultRow).where(EvalResultRow.run_id == run_id)
     )
-    assert count == 14 * 3  # 14 traces, 3 evaluators
+    assert count == 14 * 4  # 14 traces, 4 evaluators
 
 
 def test_every_row_records_its_evaluator_version(env: Path, session: Session) -> None:
@@ -139,6 +139,7 @@ def test_judged_rows_carry_a_judge_hash_and_deterministic_rows_do_not(
         by_id.setdefault(evaluator_id, set()).add(judge_hash)
 
     assert by_id["tool_call_match"] == {None}
+    assert by_id["tool_name_match"] == {None}
     assert None not in by_id["policy_followed"]
     assert None not in by_id["escalation_correct"]
 
@@ -294,7 +295,7 @@ def test_limit_restricts_the_traces_evaluated(env: Path, session: Session) -> No
         .select_from(EvalResultRow)
         .where(EvalResultRow.run_id == _run_id(session))
     )
-    assert count == 9  # 3 traces x 3 evaluators
+    assert count == 12  # 3 traces x 4 evaluators
 
 
 def test_evaluating_before_ingesting_says_so(env: Path) -> None:

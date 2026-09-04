@@ -44,7 +44,7 @@ The one deliberate exception is `contracts/protocols.py`, which imports `contrac
 | `train/` | `TrainerBackend` interface, TRL LoRA backend, candidate inference | ⬜ P5 |
 | `promote/` | Gate DSL evaluation, baseline comparison, experiment bundle | ⬜ P6 |
 | `config/` | YAML loading, kind detection, Pydantic errors mapped to source lines | ✅ P0.5 |
-| `cli/` | Command surface | 🟡 `validate` only |
+| `cli/` | Command surface | 🟡 `validate`, `ingest`, `snapshot`, `evaluate` |
 
 Every directory exists with an `__init__.py` so the layout is visible from day one and imports do not
 move as phases land.
@@ -199,7 +199,14 @@ normal and must not crash a run, while a typo'd path is a config bug and must be
 | Integration | `@pytest.mark.integration` | the compose stack — `make itest` |
 | GPU | `@pytest.mark.gpu` | a CUDA device |
 
-`make check` runs lint, `mypy --strict`, and the unit suite — the same three commands CI runs.
+`make check` runs lint, format, `mypy --strict`, the unit suite, and example validation. `make ci`
+adds the integration suite and a 95% coverage floor — the same steps
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs, so a green local tree and a green
+pipeline mean the same thing.
+
+`tests/integration/test_phase_0.py` is the phase acceptance test: it maps each clause of the P0
+criterion to an assertion and drives the real CLI over the real shipped example, substituting only
+`provider: mock` for the judge. It is the file to point at when asking whether a phase is done.
 
 Triggers, check constraints, and JSONB are Postgres-only, so anything testing them is marked
 `integration`. Running those against SQLite would produce a green suite that proved nothing, which is

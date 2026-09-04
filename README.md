@@ -236,7 +236,16 @@ URI reference; nothing reads it before P8.
 
 ## Status
 
-Pre-alpha, building P0.
+**P0 complete.** The left half of the pipeline runs end to end: ingest a JSONL
+dataset, evaluate it with deterministic checks and LLM judges, and get queryable
+per-question results with full provenance.
+
+```bash
+make install && make up
+evalloop validate examples/support-bot/*.yaml
+evalloop ingest   examples/support-bot/project.yaml
+evalloop evaluate examples/support-bot/eval-suite.yaml --split train
+```
 
 | Step | | |
 |---|---|---|
@@ -247,17 +256,18 @@ Pre-alpha, building P0.
 | P0.5 | ✅ | `evalloop validate` with line-accurate errors |
 | P0.6 | ✅ | JSONL ingest, mapping, Parquet trace store |
 | P0.7 | ✅ | Deterministic + LLM evaluators, judge client, providers, cache |
-| P0.8 | ⬜ | Example project and end-to-end acceptance test |
+| P0.8 | ✅ | Acceptance test and CI |
+
+Next: **P1** (real connectors, redaction, splits) and **P2.5 → P3a**, which is
+where `evalloop judge-health` lands — the tier that needs nothing from you.
+
+Not built yet: judge health probes, judgecard, the feedback compiler,
+fine-tuning, the promotion gate. The CLI above is the whole of what runs today.
 
 **Code layout, invariants, extension points:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
 **Design and decisions:** [`plan/000-build-plan.md`](plan/000-build-plan.md) (P0 → P6, plus P7+
 roadmap) and [`plan/001-trusted-judge-architecture.md`](plan/001-trusted-judge-architecture.md),
 which supersedes parts of it.
-
-```bash
-make install && make check     # sync deps, then lint + mypy --strict + tests
-make up                        # metastore + stand-in source database
-```
 
 **Stack:** Python 3.11+ · Pydantic v2 · Postgres + SQLAlchemy 2 + Alembic · Parquet · Typer + Rich ·
 httpx · TRL/peft/transformers (optional `[train]`)
