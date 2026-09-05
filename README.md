@@ -28,23 +28,52 @@ Everything above runs today; see [Status](#status) for what does not.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    SRC[("your DB · JSONL<br/><i>read-only</i>")] --> IN["ingest"]
-    IN --> SNAP[["snapshot<br/>Parquet + hash"]]
-    SNAP --> EV["evaluate"]
-    EV --> RES[("results<br/>Postgres")]
+Your database is a source, never a destination. Every stage narrows: thousands of raw rows, hundreds
+of results, a handful of verdicts, one decision.
 
-    P["project.yaml"] --> IN
-    T["tools.yaml"] --> EV
-    S["eval-suite.yaml"] --> EV
-    J["judges.yaml"] --> EV
-
-    RES -.-> NEXT["judgecard → feedback → train → gate<br/><i>P3–P6, not built</i>"]
+```
+  your DB · JSONL
+      │  read-only, SELECT-checked
+      ▼
+ ┌──────────┐        ┌───────────────┐
+ │  ingest  │───────►│   snapshot    │  Parquet, content-hashed, immutable
+ │ map      │        └───────┬───────┘
+ │ redact   │                │  PII gone before anything leaves the process
+ └──────────┘                ▼
+                     ┌───────────────┐     ┌────────────────┐     ┌──────────┐
+  project.yaml ─────►│   evaluate    │────►│  judge client  │────►│ provider │
+  tools.yaml ───────►│ registry      │     │ schema-forced  │     └──────────┘
+  eval-suite.yaml ──►│ selection     │◄────│ + cache        │
+  judges.yaml ──────►│ llm questions │     └────────────────┘
+                     └───────┬───────┘        keyed by judge version
+                             ▼
+ ┌───────────────────────── Postgres ─────────────────────────┐
+ │ runs · results · judge configs · llm cache · snapshots     │
+ └─────────────────────────────┬──────────────────────────────┘
+                               ▼
+                    ┌─────────────────────┐
+                    │ judgecard  feedback │  P3–P6, not built
+                    │ train      gate     │
+                    └─────────────────────┘
 ```
 
-Each stage narrows: thousands of raw rows → hundreds of results → a handful of verdicts → one
-decision. Connectors never write to your database.
+**The invariant:** the judge never sees the decision it is grading, and every gate contains at least
+one check the judge cannot move. Cache keys include the judge version, so editing a rubric can never
+be answered by the old rubric's reply.
+
+**Layout:**
+
+```
+evalloop/contracts/   frozen data contracts — trace, suite, tools, result
+evalloop/ingest/      connectors, column mapping, redaction
+evalloop/evaluate/    deterministic checks · judge questions · tool selection
+evalloop/judge/       provider clients, schema-forced output, cache
+evalloop/store/       Postgres metastore, Parquet traces, artifact store
+evalloop/cli/         validate · ingest · evaluate
+```
+
+`judgecard/`, `feedback/`, `train/` and `promote/` exist as empty packages — the interfaces are
+reserved, the phases are not built.
 
 ## The files
 
