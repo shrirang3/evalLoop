@@ -231,7 +231,7 @@ def test_cache_entries_are_keyed_by_judge_version(env: Path, session: Session) -
         select(LLMCache.judge_config_hash).where(LLMCache.judge_config_hash.in_(used))
     ).all()
 
-    assert len(cached) == 28  # 14 traces x 2 judged questions
+    assert len(cached) == 42  # 14 traces x 3 judged checks
     assert set(cached) == used
 
 
