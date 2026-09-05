@@ -1,275 +1,170 @@
 # EvalLoop
 
-**A configurable evaluation and improvement control plane for AI products.**
+**An evaluation and improvement control plane for AI products.**
 
-Bring your production traces. Define deterministic checks and LLM-judge questions in YAML. Find out
-whether your judge is trustworthy *before* you trust its numbers. Compile failures into training data
-that records where every signal came from. Fine-tune a candidate. Promote it only after sealed
-re-evaluation against something the training loop could not influence.
+Point it at production traces. Declare checks in YAML. Find out whether your judge is trustworthy
+before you trust its numbers, compile failures into training data that records where every signal
+came from, and promote a candidate only against something the training loop could not influence.
 
-**Ground truth is not a precondition.** Most teams have production traces and no labels, and cannot
-cheaply get them. The default path is judge-derived signal — every training row records its provenance
-and the judge's measured health at build time, so nothing is trusted blindly and nothing is blocked for
-lack of a dataset you were never going to have.
+**Ground truth is not a precondition.** Most teams have traces and no labels. Tool correctness comes
+from a registry you already wrote; judge questions report their own provenance. Nothing is blocked
+for lack of a dataset you were never going to have.
 
 ---
 
-## Start here
+## Quickstart
 
 ```bash
-evalloop judge-health eval-suite.yaml --traces snapshot-1
-```
+make install && make up                                    # deps + Postgres
 
-No labels. No ground truth. Returns things like:
-
-```
-question: policy_followed
-  position bias        31%  ← flips when you swap A and B
-  verbosity delta      18%  ← prefers longer answers
-  self-consistency    0.62  ← disagrees with itself
-VERDICT: this judge is not measuring what you think it is.
-```
-
-If your judge flips on a third of paraphrases, every eval number you have is noise, and no amount of
-model work will fix it.
-
----
-
-## The flow
-
-```mermaid
-flowchart TD
-    A["<b>1. Your product runs</b><br/>Agent talks to users, calls tools.<br/>Writes to your DB. EvalLoop absent."]
-    B["<b>2. Ingest</b> · P0<br/>Read rows read-only. Rename their columns<br/>to our fields. Freeze as a snapshot."]
-    C["<b>3. Split</b> · P1<br/>train / dev / test.<br/>Seal the test set."]
-    D["<b>4a. Deterministic checks</b> · P0<br/>No AI. Tool call matched?<br/>JSON valid? Free, never wrong."]
-    E["<b>4b. Judge LLM</b> · P0<br/>Ask an AI: was the tone empathetic?<br/>Costs money. Can be wrong."]
-    F["<b>5. Judge health</b> · P3a<br/>Check the instrument, not the model.<br/>Swap A/B, pad with filler, paraphrase.<br/><i>Zero labels. The wedge.</i>"]
-    G["<b>6. Human labels</b> · P3b<br/>150 traces, answered blind.<br/><i>Only if you want absolute scores.</i>"]
-    H["<b>7. Judgecard</b> · P3b<br/>Can I trust this judge,<br/>on THIS question?"]
-    I["<b>8. Feedback compiler</b> · P4<br/>Failure has a real correct answer?<br/>Yes → training row. No → drop and count.<br/>Every row stamped with provenance."]
-    J["<b>9. Train</b> · P5<br/>LoRA fine-tune a candidate."]
-    K["<b>10. Infer on sealed test</b> · P5<br/>Run the candidate over data<br/>nobody has touched."]
-    L["<b>11. Re-evaluate</b> · P0<br/>Same checks. Same judge version."]
-    M["<b>12. Compare + gate</b> · P6<br/>Must clear a deterministic check the judge<br/>can't game, held-out questions training<br/>never saw, and no slice regression."]
-    N(["PROMOTE<br/><i>a record, not a deploy</i>"])
-    O(["REJECT"])
-
-    A -->|read-only, never writes| B --> C
-    C --> D & E
-    E --> F --> H
-    G --> H
-    D --> I
-    H --> I
-    I -->|SFT or DPO rows| J --> K --> L --> M
-    M -->|passes| N
-    M -->|fails| O
-```
-
-Each stage narrows: thousands of raw logs → hundreds of results → a handful of judge verdicts → one
-decision.
-
-## What it costs you
-
-Nothing below T3 asks for a single label.
-
-| Tier | You provide | You get |
-|---|---|---|
-| **T0 Deterministic** | nothing | schema validity, tool-call correctness, hallucinated IDs, policy rules, cost, p95 latency |
-| **T1 Judge health** | nothing | position / verbosity / formatting / paraphrase bias, self-consistency, invalid-output rate |
-| **T2 Regression detection** | nothing | candidate vs baseline, per-slice regressions, gate on relative conditions |
-| **T3 Judge calibration** | ~150 labels (≈90 min) | κ against a *measured* human ceiling, confusion matrix, per-class precision |
-| **T4 Training** | T1 pass | SFT/DPO compilation, LoRA fine-tune, promotion decision |
-
-**Relative claims are free. Absolute claims cost labels.** Without T3, EvalLoop will tell you a candidate
-beat its baseline. It will refuse to tell you the model is 87% good.
-
----
-
-## Why this exists
-
-**A judge nobody checked is not a measurement.** Teams ship dashboards built on a judge that flips when
-you swap A and B, or reliably prefers whichever answer is longer. The dashboard is green and the numbers
-mean nothing. EvalLoop checks the instrument before reporting the reading — with zero labels.
-
-**Training on a judge is fine. Grading with the same judge is not.** If the judge that mints your
-preference pairs also scores your gate, the candidate is optimized to please the grader and then graded
-by it. It passes by construction, and the failure is silent and inverted: judge scores rise while quality
-falls. Three defences, none of which need a third model — a deterministic floor in every gate, held-out
-questions that never reach training data, and an automatic reject when judge scores climb while
-deterministic pass rate drops.
-
-**Honesty is provenance, not prohibition.** Refusing to emit a row for lack of ground truth just means
-you get no rows. Every row instead carries its own audit trail:
-
-```json
-{ "target_source": "judge_preference_pair", "signal_provenance": "judge",
-  "judge_version": "sha256:a91f...",
-  "judge_health": { "verbosity_delta": 0.06, "position_flip_rate": 0.04, "self_consistency": 0.91 } }
-```
-
-A failure with no legitimate target is still **dropped and counted** — `dropped_no_target` is a number
-you can act on, and a list of exactly which traces are worth labelling first. Ground truth you already
-have but never recorded as such: human handoffs, confirmed tool side-effects, business outcomes, user
-retries.
-
-## What it will not claim
-
-- **A candidate cannot exceed its judge** on judged dimensions. Fine-tuning against a stronger judge is
-  distillation, not alchemy.
-- **Uncalibrated scores are relative only.** Judge bias is roughly constant; constants cancel in a
-  comparison and do not cancel in an absolute score.
-- **Promotion is a record, not a deploy.** Nothing ships automatically.
-
----
-
-## Two models, distinct providers
-
-Base model (open-weights, served and fine-tuned) and judge (API) must not share a provider — judges
-measurably favour their own family's outputs.
-
-```yaml
-models:
-  base: { provider: huggingface, model: Qwen/Qwen2.5-7B-Instruct }
-judge:
-  provider: anthropic
-  model: claude-sonnet-5
-integrity:
-  require_distinct_providers: [base, judge]
-  gate:
-    holdout_questions: [policy_followed]   # never compiled into training data
-    deterministic_required: true           # a judge cannot game a JSON parser
-    block_on_divergence: true              # judge ↑ while deterministic ↓ = REJECT
-```
-
-`evalloop validate` treats a violation as an error, not a warning.
-
-## Trace format
-
-You provide a mapping, not a migration. `ground_truth` is **optional** — supply what you have,
-including nothing.
-
-```json
-{
-  "trace_id": "call-123",
-  "input":  { "messages": [], "user_request": "Cancel my order" },
-  "output": {
-    "text": "Certainly, I have cancelled it.",
-    "tool_calls": [{ "name": "cancel_order", "arguments": { "order_id": "ORD-42" } }],
-    "artifacts": [{ "type": "audio", "uri": "s3://bucket/call-123.wav" }]
-  },
-  "ground_truth": { "tool_calls": [...], "policy_followed": true },
-  "metadata": { "language": "en", "customer_tier": "premium" }
-}
-```
-
-`ground_truth` does two jobs. `tool_calls` and `expected_response` are **targets**, feeding the feedback
-compiler. `policy_followed` is a **label** — a human verdict on a judge question, feeding the judgecard.
-Most teams start with neither and acquire the second first.
-
-```yaml
-mapping:
-  trace_id:                id
-  input.user_request:      user_transcript
-  output.tool_calls:       tool_calls_json
-  output.artifacts[0].uri: recording_url
-  ground_truth.tool_calls: expected_tool_calls   # optional
-```
-
----
-
-## CLI
-
-```bash
-evalloop validate     project.yaml eval-suite.yaml
-evalloop ingest       project.yaml --dry-run --limit 5   # source row -> mapped trace, side by side
-evalloop snapshot     show <snapshot_id>
-
-evalloop judge-health eval-suite.yaml --traces <snapshot>    # no labels required
-evalloop evaluate     eval-suite.yaml --split dev --budget-usd 2
-
-evalloop label        export <run_id> --pool anchor --n 100  # blind human labelling
-evalloop label        import anchor.jsonl
-evalloop judgecard    <run_id> --probes --html out/card.html
-
-evalloop feedback     build <run_id> --strategy dpo
-evalloop feedback     show  <dataset_id>                 # manifest + dropped-reason histogram
-
-evalloop train        training.yaml
-evalloop infer        candidate-v3 --split test
-evalloop compare      baseline candidate-v3 --gate promotion.yaml
-evalloop bundle       <comparison_id> --out bundles/
-```
-
-## Non-negotiable rules
-
-1. Every dataset snapshot is versioned.
-2. Every judge configuration is hashed.
-3. Every evaluation result stores its evaluator version.
-4. LLM calls are cached, keyed by judge version.
-5. Connectors are read-only by default.
-6. PII redaction happens before external judge calls.
-7. Judge-derived feedback is never *unlabelled* — provenance, judge version, and judge health on every row.
-8. A judge that fails its health checks cannot mint training data.
-9. Base model provider and judge provider are never the same.
-10. Every promotion gate contains at least one deterministic condition.
-11. Held-out judge questions never reach training data.
-12. Training data never enters the sealed test set.
-13. A candidate is never automatically deployed.
-14. Cost and token usage are first-class metrics.
-
-Each is enforced by a test, not by convention.
-
-## Voice AI
-
-| Layer | Method | Status |
-|---|---|---|
-| Tool behaviour — which tool, correct arguments, did it succeed | Deterministic | P0 |
-| Transcript behaviour — empathy, concision, policy compliance | LLM judge over transcript | P0 |
-| Audio behaviour — speech rate, pitch, pauses, pronunciation | Audio model / signal processing | P8 |
-
-A text LLM cannot judge acoustic tone from a transcript, and fine-tuning a text model cannot change
-pitch or cadence — those belong to TTS configuration or TTS training. Traces carry the recording as a
-URI reference; nothing reads it before P8.
-
----
-
-## Status
-
-**P0 complete.** The left half of the pipeline runs end to end: ingest a JSONL
-dataset, evaluate it with deterministic checks and LLM judges, and get queryable
-per-question results with full provenance.
-
-```bash
-make install && make up
-evalloop validate examples/support-bot/*.yaml
-evalloop ingest   examples/support-bot/project.yaml
+evalloop validate examples/support-bot/*.yaml              # every config, line-accurate errors
+evalloop ingest   examples/support-bot/project.yaml --dry-run --limit 5
+evalloop ingest   examples/support-bot/project.yaml        # → immutable snapshot
 evalloop evaluate examples/support-bot/eval-suite.yaml --split train
 ```
 
-| Step | | |
+Last command prints a per-check table with pass / fail / not-applicable, cost, and cache hits.
+Everything above runs today; see [Status](#status) for what does not.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    SRC[("your DB · JSONL<br/><i>read-only</i>")] --> IN["ingest"]
+    IN --> SNAP[["snapshot<br/>Parquet + hash"]]
+    SNAP --> EV["evaluate"]
+    EV --> RES[("results<br/>Postgres")]
+
+    P["project.yaml"] --> IN
+    T["tools.yaml"] --> EV
+    S["eval-suite.yaml"] --> EV
+    J["judges.yaml"] --> EV
+
+    RES -.-> NEXT["judgecard → feedback → train → gate<br/><i>P3–P6, not built</i>"]
+```
+
+Each stage narrows: thousands of raw rows → hundreds of results → a handful of verdicts → one
+decision. Connectors never write to your database.
+
+## The files
+
+| File | Declares | Example |
 |---|---|---|
-| P0.1 | ✅ | Docker stack, CLI entry point |
-| P0.2 | ✅ | Trace and result contracts |
-| P0.3 | ✅ | Config contracts for all five YAML files |
-| P0.4 | ✅ | Metastore (13 tables), Alembic migration, artifact store |
-| P0.5 | ✅ | `evalloop validate` with line-accurate errors |
-| P0.6 | ✅ | JSONL ingest, mapping, Parquet trace store |
-| P0.7 | ✅ | Deterministic + LLM evaluators, judge client, providers, cache |
-| P0.8 | ✅ | Acceptance test and CI |
+| `project.yaml` | source, column mapping, splits, redaction, integrity rules | [↗](examples/support-bot/project.yaml) |
+| `tools.yaml` | tools the agent may call, per node | [↗](examples/support-bot/tools.yaml) |
+| `eval-suite.yaml` | the checks that run against a snapshot | [↗](examples/support-bot/eval-suite.yaml) |
+| `judges.yaml` | judge models, one or many | [↗](examples/support-bot/judges.yaml) |
+| `promotion.yaml` · `training.yaml` | gate conditions, LoRA config (P5–P6) | [↗](examples/support-bot/) |
 
-Next: **P1** (real connectors, redaction, splits) and **P2.5 → P3a**, which is
-where `evalloop judge-health` lands — the tier that needs nothing from you.
+A trace is your data, renamed — no migration, no `ground_truth` key:
 
-Not built yet: judge health probes, judgecard, the feedback compiler,
-fine-tuning, the promotion gate. The CLI above is the whole of what runs today.
+```json
+{ "trace_id": "call-123",
+  "input":  { "user_request": "Cancel my order" },
+  "output": { "text": "Certainly, I have cancelled it.",
+              "tool_calls": [{ "name": "cancel_order", "arguments": { "order_id": "ORD-42" } }] },
+  "metadata": { "language": "en", "customer_tier": "premium" } }
+```
 
-**Code layout, invariants, extension points:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
-**Design and decisions:** [`plan/000-build-plan.md`](plan/000-build-plan.md) (P0 → P6, plus P7+
-roadmap) and [`plan/001-trusted-judge-architecture.md`](plan/001-trusted-judge-architecture.md),
-which supersedes parts of it.
+```yaml
+mapping:
+  trace_id:           id
+  input.user_request: user_transcript
+  output.tool_calls:  tool_calls_json
+```
+
+## Tool correctness, without labels
+
+`tools.yaml` is the definitions your agent already hands the model on every request, exported —
+config, not annotation ([`plan/002`](plan/002-tool-registry-and-selection.md)).
+
+```yaml
+nodes:
+  refunds: { tools: [issue_refund, open_warranty_claim, lookup_order] }
+tools:
+  issue_refund:
+    description: Refund an order to the original payment method. Irreversible.
+    arguments: { order_id: {type: string, required: true}, amount: {type: number, required: true} }
+    side_effecting: true
+```
+
+| Check | Asks | Catches |
+|---|---|---|
+| `tool_registry_check` | is this call legal? | tool that does not exist · not permitted at this node · arguments off-schema · side-effecting call repeated |
+| `tool_selection` | which tool *should* have been called? | wrong choice among legal tools — the judge picks from the catalogue **without seeing the call**, and every tool called must be in its `acceptable` set |
+
+`tool_registry_check` is objective, so it is the deterministic floor every promotion gate must
+contain. `tool_selection` computes a target where ground truth would have stored one, so its rows
+carry the judge hash and support relative claims only.
+
+**Ground truth stays optional**, with two jobs and neither of them tool correctness: `policy_followed`
+and friends are *labels* feeding the judgecard; `expected_tool_calls` and `expected_response` are
+*targets* feeding the feedback compiler, and belong on cases you authored. A check with no ground
+truth reports `not applicable`, never a failure.
+
+## What it costs you
+
+| Tier | You provide | You get |
+|---|---|---|
+| **T0** Deterministic | nothing | tool legality, schema validity, hallucinated IDs, cost, p95 latency |
+| **T1** Judge health | nothing | position / verbosity / paraphrase bias, self-consistency, invalid-output rate |
+| **T2** Regression | nothing | candidate vs baseline, per-slice regressions, relative gate conditions |
+| **T3** Calibration | ~150 labels (≈90 min) | κ against a *measured* human ceiling, confusion matrix, FAIL-class precision |
+| **T4** Training | T1 pass | SFT/DPO compilation, LoRA fine-tune, promotion decision |
+
+**Relative claims are free. Absolute claims cost labels.** Without T3, EvalLoop will say a candidate
+beat its baseline. It will refuse to say the model is 87% good.
+
+## Why
+
+- **A judge nobody checked is not a measurement.** A judge that flips when you swap A and B makes
+  every number downstream noise. Check the instrument before reporting the reading — zero labels.
+- **Training on a judge is fine; grading with the same judge is not.** The candidate is optimised to
+  please the grader, then graded by it, and passes by construction. Three defences, no third model:
+  a deterministic floor in every gate, held-out questions training never sees, and an automatic
+  reject when judge scores climb while deterministic pass rate falls.
+- **Honesty is provenance, not prohibition.** Refusing to emit a row for lack of ground truth just
+  means no rows. Every row instead carries `target_source`, `signal_provenance`, `judge_version`,
+  and the judge's measured health at build time.
+- **A candidate cannot exceed its judge.** Fine-tuning against a stronger judge is distillation, not
+  alchemy. Promotion is a record, not a deploy.
+
+## Guarantees
+
+Each is enforced by a test, not by convention.
+
+1. Every snapshot is versioned; every judge config and evaluator is hashed onto every result.
+2. LLM calls are cached, keyed by judge version — a rubric edit can never reuse an old answer.
+3. Connectors are read-only. PII redaction runs before any external judge call.
+4. A judge failing its health checks cannot mint training data.
+5. Base model provider ≠ judge provider — judges favour their own family's outputs.
+6. Every gate contains a deterministic condition; held-out questions never reach training data.
+7. Training data never enters the sealed test set. A candidate is never deployed automatically.
+8. Tool correctness never requires ground truth; a judge assessing a call is never shown the call.
+9. Cost and token usage are first-class metrics.
+
+## Status
+
+**P0 complete** — ingest → evaluate runs end to end with queryable, fully-attributed results.
+
+| | |
+|---|---|
+| ✅ P0.1–P0.8 | contracts, metastore, `validate`, JSONL ingest, deterministic + judge evaluators, cache, CI |
+| ✅ plan/002 | tool registry, `tool_registry_check`, `tool_selection` |
+| ⬜ P1 · P2.5 | real connectors, redaction, splits, latent ground-truth harvesting |
+| ⬜ P3a → P6 | `judge-health`, judgecard, feedback compiler, LoRA training, promotion gate |
+
+`judge-health`, `judgecard`, `label`, `feedback`, `train`, `compare` and `bundle` appear in the
+design docs and do not exist yet. The Quickstart above is the whole of what runs today.
+
+**Voice:** traces carry audio as a URI. Tool and transcript layers are evaluated now; acoustic
+evaluation is P8 — a text judge cannot hear tone, and fine-tuning a text model cannot change pitch.
+
+---
+
+**Code layout and extension points:** [`ARCHITECTURE.md`](ARCHITECTURE.md)
+**Design decisions:** [`plan/`](plan/README.md) — [000](plan/000-build-plan.md) build plan,
+[001](plan/001-trusted-judge-architecture.md) trusted judge, [002](plan/002-tool-registry-and-selection.md) tool registry
 
 **Stack:** Python 3.11+ · Pydantic v2 · Postgres + SQLAlchemy 2 + Alembic · Parquet · Typer + Rich ·
-httpx · TRL/peft/transformers (optional `[train]`)
-
-**License:** Apache-2.0
+httpx · TRL/peft/transformers (optional `[train]`) — **License:** Apache-2.0
