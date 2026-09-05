@@ -1,14 +1,34 @@
 # Checks that run against a support-bot snapshot.
 #
-# One deterministic, two judged. The deterministic one is the important half:
-# a judge cannot game a JSON comparison, which is what makes it admissible as
-# the floor of a promotion gate (plan/001 section 3.2.1).
+# Two deterministic, three judged. The deterministic half is the important one:
+# a judge cannot game a JSON parser, which is what makes it admissible as the
+# floor of a promotion gate (plan/001 section 3.2.1).
+#
+# Read the first two together. `tool_registry_check` needs no ground truth, so
+# it returns a verdict on every trace a customer actually has.
+# `tool_call_match` needs a recorded target, so on production traces it returns
+# `not applicable` and the gate floor it was supposed to provide does not
+# exist. That is the gap plan/002 closes: the registry is config the team
+# already wrote, and ground truth is a column nobody emits.
 
 suite: support-bot-v1
-description: Tool-call correctness plus policy and escalation judgements
+description: Tool-call legality and selection, plus policy and escalation judgements
 
 evaluators:
-  # ---- deterministic ----------------------------------------------------
+  # ---- deterministic, no ground truth needed -----------------------------
+  # Reads tools.yaml. Catches: a tool that does not exist, a tool called from a
+  # node that may not call it, arguments that do not match the declared schema,
+  # and a side-effecting call repeated verbatim (two identical refunds is two
+  # refunds).
+  - id: tool_registry_check
+    type: tool_registry_check
+    actual: output.tool_calls
+
+  # ---- deterministic, ground truth required ------------------------------
+  # Retained for scenario packs - cases the team authored, where they genuinely
+  # know the answer. On a production trace with no `expected_tool_calls`
+  # column this reports `not applicable`, which is honest and is also why it
+  # cannot be the only tool check in the suite.
   - id: tool_call_match
     type: json_match
     actual: output.tool_calls
@@ -44,6 +64,30 @@ evaluators:
       lower: true
 
   # ---- judged -----------------------------------------------------------
+  # The judge is shown the catalogue and the customer's message, and picks a
+  # tool. It is never shown the call that happened - a judge shown a decision
+  # rationalises it, which is the anchoring failure plan/001 section 6.2
+  # forbids for human labellers, for the same reason (plan/002 section 3).
+  #
+  # Its answer is a *computed* target where ground truth would have been a
+  # stored one, so the verdict is set membership: every tool actually called
+  # has to appear in the judge's `acceptable` list. Equality against a single
+  # `best` would fail the model for picking a defensible alternative, and a
+  # false failure is the expensive direction (plan/001 section 5.3).
+  - id: tool_selection
+    type: tool_selection
+    judge: default
+    request: input.user_request
+    actual: output.tool_calls
+    policy: >-
+      Refunds are permitted within 30 days of purchase. Outside that window, a
+      damaged or faulty item qualifies for a warranty replacement instead of a
+      refund.
+    system_prompt: >-
+      You choose the correct tool for a customer-support request. Decide from
+      the request and the policy alone. Prefer a read-only tool when the
+      request does not clearly call for a state change.
+
   - id: policy_followed
     type: llm_question
     judge: default

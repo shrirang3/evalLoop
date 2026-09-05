@@ -44,15 +44,23 @@ runner = CliRunner()
 EXAMPLE = Path("examples/support-bot")
 
 TRACES = 14
-EVALUATORS = 4
+EVALUATORS = 6
 
 # Expected outcomes, hand-checkable against examples/support-bot/traces.jsonl.
 # The mock judge always answers True, so `policy_followed` fails on exactly the
 # traces where the recorded human verdict is False - which is one column of the
 # confusion matrix P3 is built on.
 EXPECTED = {
+    # Needs no ground truth: every trace that called something gets a verdict.
+    # The four `n/a` are the traces that called nothing at all - legal, but
+    # never looked at (plan/002 section 2).
+    "tool_registry_check": {"pass": 10, "fail": 0, "n/a": 4},
     "tool_call_match": {"pass": 5, "fail": 5, "n/a": 4},
     "tool_name_match": {"pass": 5, "fail": 2, "n/a": 7},
+    # Also needs no ground truth, and reaches every trace because "no tool" is
+    # one of its answers. The mock judge picks the alphabetically first tool in
+    # the catalogue, so this fails everywhere the agent did something else.
+    "tool_selection": {"pass": 1, "fail": 13, "n/a": 0},
     "policy_followed": {"pass": 5, "fail": 7, "n/a": 2},
     "escalation_correct": {"pass": 0, "fail": 0, "n/a": TRACES},
 }
@@ -63,7 +71,7 @@ def project(
     tmp_path: Path, unique_name: str, pg_engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> Path:
     """The shipped example, renamed, with a mock judge."""
-    for name in ("project.yaml", "judges.yaml", "eval-suite.yaml", "traces.jsonl"):
+    for name in ("project.yaml", "judges.yaml", "eval-suite.yaml", "tools.yaml", "traces.jsonl"):
         shutil.copy(EXAMPLE / name, tmp_path / name)
 
     for name, old, new in (
@@ -266,5 +274,5 @@ def test_traces_with_no_ground_truth_are_not_recorded_as_failures(
 def test_the_shipped_example_is_the_one_under_test(project: Path) -> None:
     """The example is documentation people copy, so it is checked like code.
     Only judges.yaml and the project name differ from what ships."""
-    for name in ("eval-suite.yaml", "traces.jsonl"):
+    for name in ("eval-suite.yaml", "tools.yaml", "traces.jsonl"):
         assert (project / name).read_bytes() == (EXAMPLE / name).read_bytes()

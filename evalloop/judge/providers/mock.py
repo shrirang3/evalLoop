@@ -31,7 +31,12 @@ class MockProvider:
     """
 
     name: str = "mock"
-    answers: list[Any] = field(default_factory=lambda: [{"answer": True}])
+    answers: list[Any] | None = None
+    """Canned answers, cycled. `None` means "answer whatever this schema asks
+    for", which is what lets one `provider: mock` line serve a suite containing
+    both an `llm_question` and a `tool_selection` - two different answer shapes,
+    neither of them configured per check."""
+
     answer_fn: Callable[[RenderedPrompt], Any] | None = None
     raise_error: Exception | None = None
     calls: list[RenderedPrompt] = field(default_factory=list)
@@ -52,8 +57,10 @@ class MockProvider:
 
         if self.answer_fn is not None:
             payload = self.answer_fn(prompt)
-        else:
+        elif self.answers is not None:
             payload = self.answers[(len(self.calls) - 1) % len(self.answers)]
+        else:
+            payload = _from_schema(schema)
 
         # A string answer is emitted verbatim, so a test can produce malformed
         # output on purpose.
@@ -66,3 +73,30 @@ class MockProvider:
                 cost_usd=self.cost_usd,
             ),
         )
+
+
+def _from_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """The dullest answer that satisfies the schema.
+
+    Deliberately not random and not clever: a mock judge whose answers move
+    between runs makes a failing CI run impossible to read. Enums pick their
+    first value, which for `tool_selection` is the alphabetically first tool -
+    wrong often enough to exercise the failure path, and identical every time.
+    """
+    answer: dict[str, Any] = {}
+    for name, spec in schema.get("properties", {}).items():
+        if not isinstance(spec, dict):
+            continue
+        if (choices := spec.get("enum")) and isinstance(choices, list) and choices:
+            answer[name] = choices[0]
+        elif spec.get("type") == "boolean":
+            answer[name] = True
+        elif spec.get("type") == "array":
+            items = spec.get("items")
+            inner = items.get("enum") if isinstance(items, dict) else None
+            answer[name] = [inner[0]] if isinstance(inner, list) and inner else []
+        elif spec.get("type") in {"number", "integer"}:
+            answer[name] = 0
+        else:
+            answer[name] = "mock answer"
+    return answer

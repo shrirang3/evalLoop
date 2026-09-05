@@ -23,6 +23,7 @@ from evalloop.contracts.judgeconf import JudgeConfig
 from evalloop.contracts.project import ProjectConfig, check_integrity
 from evalloop.contracts.promotion import PromotionConfig
 from evalloop.contracts.suite import EvalSuite
+from evalloop.contracts.tools import ToolRegistry
 from evalloop.contracts.training import TrainingConfig
 
 __all__ = [
@@ -40,6 +41,7 @@ class ConfigKind(StrEnum):
     PROJECT = "project"
     SUITE = "eval-suite"
     JUDGES = "judges"
+    TOOLS = "tools"
     TRAINING = "training"
     PROMOTION = "promotion"
 
@@ -47,6 +49,7 @@ class ConfigKind(StrEnum):
 SCHEMAS: dict[ConfigKind, type[BaseModel]] = {
     ConfigKind.PROJECT: ProjectConfig,
     ConfigKind.SUITE: EvalSuite,
+    ConfigKind.TOOLS: ToolRegistry,
     ConfigKind.TRAINING: TrainingConfig,
     ConfigKind.PROMOTION: PromotionConfig,
     # JUDGES is a mapping of name -> JudgeConfig rather than a single model, so
@@ -60,6 +63,7 @@ _FILENAME_HINTS: dict[str, ConfigKind] = {
     "suite": ConfigKind.SUITE,
     "judges": ConfigKind.JUDGES,
     "judge": ConfigKind.JUDGES,
+    "tools": ConfigKind.TOOLS,
     "training": ConfigKind.TRAINING,
     "train": ConfigKind.TRAINING,
     "promotion": ConfigKind.PROMOTION,
@@ -72,6 +76,10 @@ _CONTENT_MARKERS: tuple[tuple[str, ConfigKind], ...] = (
     ("evaluators", ConfigKind.SUITE),
     ("source", ConfigKind.PROJECT),
     ("judges", ConfigKind.JUDGES),
+    # `tools` is checked after `judges` and `source`: only the registry has it
+    # at the top level, but a future file that merely mentions tools should not
+    # win the sniff before the kinds that are identified by their own key.
+    ("tools", ConfigKind.TOOLS),
     ("dataset_id", ConfigKind.TRAINING),
     ("slices", ConfigKind.PROMOTION),
 )

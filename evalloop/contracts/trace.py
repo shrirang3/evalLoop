@@ -75,6 +75,29 @@ class ToolCall(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
     call_id: str | None = None
 
+    node: str | None = None
+    """Which node of the agent graph made this call.
+
+    Optional, and unset is the common case: a flat single-node agent has no
+    node to record. Where it is present, `tool_registry_check` can tell a scope
+    violation (this tool exists, but not here) from a hallucination (this tool
+    does not exist at all). Where it is absent the check degrades to global
+    membership rather than failing (plan/002 section 1.1).
+    """
+
+    result: Any = None
+    """What the tool returned, when the product records it.
+
+    `plan/001` section 2 promises `tool_call_exec` at T0 - "did the call
+    actually succeed" - and that is unanswerable from a call record alone. A
+    structurally perfect call that returned POLICY_VIOLATION while the agent
+    said "done" is the failure mode this field exists to make visible.
+    """
+
+    error: str | None = None
+    """The tool's error, when it failed. Distinct from `result` being empty:
+    a call that returned nothing and a call that raised are different events."""
+
 
 class Artifact(BaseModel):
     """A pointer to a large binary that lives outside the trace.

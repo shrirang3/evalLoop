@@ -104,8 +104,8 @@ def test_shipped_example_configs_all_validate() -> None:
     """The examples are documentation people copy. A broken one teaches a broken
     pattern, so they are checked like code."""
     examples = sorted(Path("examples/support-bot").glob("*.yaml"))
-    assert len(examples) == 5, "expected project, judges, eval-suite, promotion, training"
+    assert len(examples) == 6, "expected project, judges, eval-suite, tools, promotion, training"
 
     result = runner.invoke(app, ["validate", *[str(p) for p in examples]])
     assert result.exit_code == 0, result.output
-    assert "5 files valid" in " ".join(result.output.split())
+    assert "6 files valid" in " ".join(result.output.split())

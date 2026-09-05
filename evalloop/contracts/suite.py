@@ -28,11 +28,13 @@ __all__ = [
     "LLMQuestionSpec",
     "MatcherType",
     "SuiteEvaluator",
+    "ToolSelectionSpec",
 ]
 
 DeterministicType = Literal[
     "exact_match",
     "json_match",
+    "tool_registry_check",
     "json_schema",
     "regex",
     "numeric_tolerance",
@@ -45,6 +47,7 @@ DETERMINISTIC_TYPES: frozenset[str] = frozenset(
     (
         "exact_match",
         "json_match",
+        "tool_registry_check",
         "json_schema",
         "regex",
         "numeric_tolerance",
@@ -156,8 +159,85 @@ class LLMQuestionSpec(BaseModel):
         }
 
 
+class ToolSelectionSpec(BaseModel):
+    """Ask a judge which tool *should* have been called, without showing it the call.
+
+    The other LLM check grades a decision it has been shown. This one makes the
+    decision first, blind, and lets code compare afterwards - which is the same
+    rule `plan/001` section 6.2 imposes on human labellers, for the same reason:
+    a judge shown a verdict rationalises it (`plan/002` section 3).
+
+    There is no `question` field. The prompt is generated from the registry, so
+    the answer space is closed: the judge picks from this node's allowlist plus
+    `none`, and a hallucinated answer is unrepresentable rather than merely
+    unlikely.
+    """
+
+    model_config = _STRICT
+
+    id: str = Field(min_length=1)
+    type: Literal["tool_selection"] = "tool_selection"
+
+    judge: str = "default"
+
+    actual: str = "output.tool_calls"
+    """The calls that happened. Read *after* the judge has answered, never shown to it."""
+
+    request: str = "input.user_request"
+    """What the user asked. This, the catalogue, and `policy` are the whole prompt."""
+
+    policy: str | None = None
+    """Rules the judge should apply, e.g. the refund window. Free text, hashed
+    into the evaluator version because it changes the measurement."""
+
+    inputs: dict[str, str] = Field(default_factory=dict)
+    """Extra template variables, same path syntax as `LLMQuestionSpec.inputs`.
+    Anything naming `output.text` or `output.tool_calls` is refused: those leak
+    the decision the judge is being asked to make."""
+
+    node_path: str | None = None
+    """Dotted path to a trace-level node, for products that record one per turn
+    rather than per call."""
+
+    samples: int = 1
+    """How many times to ask. Values above 1 need the sampling and cache
+    machinery that arrives with the P3a self-consistency probe, and are refused
+    rather than silently collapsed into one answer."""
+
+    system_prompt: str | None = None
+    holdout: bool = False
+    weight: float = Field(default=1.0, ge=0.0)
+
+    @model_validator(mode="after")
+    def _inputs_do_not_leak_the_answer(self) -> ToolSelectionSpec:
+        leaks = sorted(
+            name
+            for name, path in self.inputs.items()
+            if path == "output.tool_calls" or path.startswith(("output.tool_calls", "output.text"))
+        )
+        if leaks:
+            raise ValueError(
+                f"inputs {leaks} read from the model's own output. A judge shown the "
+                "call it is assessing rationalises it - that is the anchoring failure "
+                "select-mode exists to avoid (plan/002 section 3)"
+            )
+        return self
+
+    def version_payload(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "type": self.type,
+            "judge": self.judge,
+            "request": self.request,
+            "policy": self.policy,
+            "inputs": self.inputs,
+            "system_prompt": self.system_prompt,
+            "samples": self.samples,
+        }
+
+
 SuiteEvaluator = Annotated[
-    EvaluatorSpec | LLMQuestionSpec,
+    EvaluatorSpec | LLMQuestionSpec | ToolSelectionSpec,
     Field(discriminator="type"),
 ]
 """Discriminated on `type`, not a plain union.

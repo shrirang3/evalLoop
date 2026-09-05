@@ -1,0 +1,76 @@
+# What the agent is allowed to call, and where.
+#
+# This file is an export, not annotation. These are the same definitions the
+# product already hands the model on every request - which is the whole reason
+# tool correctness can stop depending on ground truth (plan/002).
+#
+# Optional: a suite with no tool checks needs no registry. It becomes required
+# the moment `tool_registry_check` or `tool_selection` appears in the suite,
+# and both say so by name if it is missing.
+
+nodes:
+  # A tool being permitted somewhere in the graph is not the same as being
+  # permitted here. Without this split, `issue_refund` fired from triage looks
+  # exactly like `issue_refund` fired from the refunds node.
+  triage:
+    tools: [lookup_order, route_to_node]
+  refunds:
+    tools: [issue_refund, lookup_refund_status, open_warranty_claim, cancel_order, lookup_order]
+  warranty:
+    tools: [open_warranty_claim, lookup_order]
+  tracking:
+    tools: [track_order, lookup_order]
+
+tools:
+  # `description` is shown to the judge verbatim, so it is prompt text as much
+  # as documentation. Editing it changes the measurement, which is why the
+  # registry hash is folded into every evaluator version that reads this file.
+  issue_refund:
+    description: Refund an order to the original payment method. Irreversible.
+    arguments:
+      order_id: {type: string, required: true}
+      amount: {type: number, required: true}
+    side_effecting: true
+    # Documentation until the expression engine lands (plan/002 section 7).
+    # `tool_registry_check` refuses to be configured with
+    # `check_preconditions: true` rather than silently passing everything.
+    preconditions: ["order.age_days <= 30"]
+
+  open_warranty_claim:
+    description: Open a replacement claim for a damaged or faulty item.
+    arguments:
+      order_id: {type: string, required: true}
+      reason: {type: string, enum: [damaged, late_request, faulty]}
+    side_effecting: true
+
+  cancel_order:
+    description: Cancel an order that has not yet shipped.
+    arguments:
+      order_id: {type: string, required: true}
+    side_effecting: true
+
+  lookup_refund_status:
+    description: Read-only status of a refund that has already been issued.
+    arguments:
+      order_id: {type: string, required: true}
+    # Read-only, so calling it twice is not a fault. Leaving this unset would
+    # make a repeated lookup unclassifiable rather than fine.
+    side_effecting: false
+
+  lookup_order:
+    description: Read-only order details - date, total, shipping status.
+    arguments:
+      order_id: {type: string, required: true}
+    side_effecting: false
+
+  track_order:
+    description: Read-only delivery tracking for a shipped order.
+    arguments:
+      order_id: {type: string, required: true}
+    side_effecting: false
+
+  route_to_node:
+    description: Hand the conversation to another node of the agent.
+    arguments:
+      node: {type: string, enum: [refunds, warranty]}
+    side_effecting: false

@@ -35,6 +35,13 @@ from evalloop.contracts.suite import (
     MatcherType,
     SuiteEvaluator,
 )
+from evalloop.contracts.tools import (
+    NONE_CHOICE,
+    ArgumentSpec,
+    NodeSpec,
+    ToolRegistry,
+    ToolSpec,
+)
 from evalloop.contracts.trace import (
     Artifact,
     GroundTruth,
@@ -50,7 +57,9 @@ from evalloop.contracts.training import LoRAConfig, TrainingConfig
 __all__ = [
     "DETERMINISTIC_TYPES",
     "MISSING",
+    "NONE_CHOICE",
     "PARSER_VERSION",
+    "ArgumentSpec",
     "Artifact",
     "BaseModelSpec",
     "EvalContext",
@@ -71,6 +80,7 @@ __all__ = [
     "MatcherType",
     "Message",
     "Missing",
+    "NodeSpec",
     "ProjectConfig",
     "PromotionConfig",
     "RedactionRule",
@@ -81,6 +91,8 @@ __all__ = [
     "SuiteEvaluator",
     "TokenUsage",
     "ToolCall",
+    "ToolRegistry",
+    "ToolSpec",
     "Trace",
     "TraceInput",
     "TraceOutput",

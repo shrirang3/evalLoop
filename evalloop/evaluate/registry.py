@@ -13,19 +13,33 @@ from dataclasses import dataclass, field
 
 from evalloop.contracts.judgeconf import JudgeConfig
 from evalloop.contracts.protocols import Evaluator
-from evalloop.contracts.suite import EvalSuite, EvaluatorSpec, LLMQuestionSpec
+from evalloop.contracts.suite import EvalSuite, EvaluatorSpec, LLMQuestionSpec, ToolSelectionSpec
+from evalloop.contracts.tools import ToolRegistry
 from evalloop.evaluate.deterministic.exact import ExactMatchEvaluator
 from evalloop.evaluate.deterministic.json_match import JsonMatchEvaluator
+from evalloop.evaluate.deterministic.registry_check import ToolRegistryCheckEvaluator
 from evalloop.evaluate.llm.question import LLMQuestionEvaluator
+from evalloop.evaluate.llm.selection import ToolSelectionEvaluator, selection_schema
 from evalloop.judge import make_provider
 from evalloop.judge.client import CacheBackend, JudgeClient
 
-__all__ = ["DETERMINISTIC", "PLANNED", "BuiltSuite", "build_suite"]
+__all__ = ["DETERMINISTIC", "NEEDS_REGISTRY", "PLANNED", "BuiltSuite", "build_suite"]
 
 DETERMINISTIC: dict[str, Callable[[EvaluatorSpec], Evaluator]] = {
     "exact_match": ExactMatchEvaluator,
     "json_match": JsonMatchEvaluator,
 }
+
+NEEDS_REGISTRY: dict[str, Callable[[EvaluatorSpec, ToolRegistry], Evaluator]] = {
+    "tool_registry_check": ToolRegistryCheckEvaluator,
+}
+"""Checks that read `tools.yaml` instead of a ground-truth path.
+
+Kept as a separate table rather than given a uniform signature: a registry-aware
+evaluator genuinely needs an argument the others do not, and hiding that behind
+an optional parameter would make "was this suite built with a registry?"
+invisible at the call site.
+"""
 
 PLANNED: dict[str, str] = {
     "json_schema": "P2",
@@ -58,6 +72,7 @@ def build_suite(
     judges: dict[str, JudgeConfig],
     *,
     cache: CacheBackend | None = None,
+    registry: ToolRegistry | None = None,
 ) -> BuiltSuite:
     """Construct every evaluator in a suite, collecting construction errors.
 
@@ -71,21 +86,36 @@ def build_suite(
         try:
             if isinstance(spec, LLMQuestionSpec):
                 _add_llm(built, spec, judges, cache)
+            elif isinstance(spec, ToolSelectionSpec):
+                _add_selection(built, spec, judges, cache, registry)
             else:
-                _add_deterministic(built, spec)
+                _add_deterministic(built, spec, registry)
         except (ValueError, KeyError, TypeError) as exc:
             built.errors.append(f"{spec.id}: {exc}")
 
     return built
 
 
-def _add_deterministic(built: BuiltSuite, spec: EvaluatorSpec) -> None:
+def _add_deterministic(
+    built: BuiltSuite,
+    spec: EvaluatorSpec,
+    registry: ToolRegistry | None,
+) -> None:
+    if (registry_factory := NEEDS_REGISTRY.get(spec.type)) is not None:
+        if registry is None:
+            raise ValueError(
+                f"evaluator type '{spec.type}' needs a tool registry; declare one in "
+                "tools.yaml and reference it from project.yaml as `tools: tools.yaml`"
+            )
+        built.evaluators.append(registry_factory(spec, registry))
+        return
+
     factory = DETERMINISTIC.get(spec.type)
     if factory is None:
         phase = PLANNED.get(spec.type, "a later phase")
         raise ValueError(
             f"evaluator type '{spec.type}' is not implemented yet (arrives in {phase}); "
-            f"available now: {', '.join(sorted(DETERMINISTIC))}"
+            f"available now: {', '.join(sorted([*DETERMINISTIC, *NEEDS_REGISTRY]))}"
         )
     built.evaluators.append(factory(spec))
 
@@ -113,3 +143,38 @@ def _add_llm(
     )
     built.judges[spec.id] = client
     built.evaluators.append(LLMQuestionEvaluator(spec, client.version_hash))
+
+
+def _add_selection(
+    built: BuiltSuite,
+    spec: ToolSelectionSpec,
+    judges: dict[str, JudgeConfig],
+    cache: CacheBackend | None,
+    registry: ToolRegistry | None,
+) -> None:
+    if registry is None:
+        raise ValueError(
+            "tool_selection needs a tool registry - the catalogue is the prompt and the "
+            "allowlist is the answer space. Declare one in tools.yaml and reference it "
+            "from project.yaml as `tools: tools.yaml`"
+        )
+    config = judges.get(spec.judge)
+    if config is None:
+        raise KeyError(
+            f"judge '{spec.judge}' is not declared in judges.yaml; "
+            f"declared: {', '.join(sorted(judges)) or '(none)'}"
+        )
+
+    # The judge version must move when the catalogue does, so the registry goes
+    # into the client's `questions` alongside the policy: both are prompt text,
+    # and neither is authored in the suite file.
+    client = JudgeClient(
+        config,
+        make_provider(config.provider),
+        system_prompt=spec.system_prompt,
+        questions=[registry.catalogue(), spec.policy or ""],
+        response_schema=selection_schema(registry, None),
+        cache=cache,
+    )
+    built.judges[spec.id] = client
+    built.evaluators.append(ToolSelectionEvaluator(spec, registry, client.version_hash))

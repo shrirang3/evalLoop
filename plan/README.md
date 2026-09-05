@@ -7,6 +7,7 @@ their history.
 |---|---|
 | [`000-build-plan.md`](000-build-plan.md) | Full phased build plan: stack, repo layout, P0 (contracts) → P6 (promotion gate), P7+ roadmap, cross-cutting engineering rules, per-phase verification commands |
 | [`001-trusted-judge-architecture.md`](001-trusted-judge-architecture.md) | Supersedes parts of 000 (P3, P4, P6). Ground truth is no longer a precondition: trusted-judge default path, capability tiers, two-model topology, provenance-not-prohibition, human calibration loop, dataset choices |
+| [`002-tool-registry-and-selection.md`](002-tool-registry-and-selection.md) | Supersedes parts of 000 (P2.1, P4.2). Tool correctness without ground truth: node-scoped tool registry, three split checks, select-mode judging, ambiguity abstention, `judge_tool_selection` target source |
 
 ## Decisions taken
 
@@ -20,6 +21,8 @@ their history.
 | Model topology | **Two models, base provider ≠ judge provider** ([`001`](001-trusted-judge-architecture.md) §3) | Distinct providers kill self-preference bias at near-zero cost. A third gate judge was considered and deferred — circularity is broken more cheaply by a deterministic gate floor, held-out judge questions, and a divergence block. |
 | Judge trust | **Provenance, not prohibition** ([`001`](001-trusted-judge-architecture.md) §5.2) | Blocking uncalibrated judges blocks the whole market. Instead every training row is stamped with `signal_provenance`, `judge_version`, and `judge_health`, so nothing is silently unaccounted for and any dataset can be audited after the fact. |
 | Human involvement | ~150 labels, two pools, blind ([`001`](001-trusted-judge-architecture.md) §6) | ~90 min of one domain expert makes the judgecard real. Anchor pool gives unbiased κ, targeted pool gives FAIL-class precision — the metric that actually protects training data. |
+| Tool correctness | **Registry, not ground truth** ([`002`](002-tool-registry-and-selection.md) §1–2) | No product emits an `expected_tool_calls` column, so the highest-value check silently abstained on every real trace. A team's tool definitions already exist in their agent code — asking for an export is not asking for annotation. Gives T0 a deterministic tool check on a customer's first run. |
+| Tool judging | **Select, don't grade** ([`002`](002-tool-registry-and-selection.md) §3) | Showing the judge the call it is assessing is the anchoring failure `001` §6.2 forbids for humans. Blind selection from an enum-constrained catalogue is also a closed answer space: fewer parse failures, measurable per-trace self-consistency, and a cheap model is enough. |
 
 ## Phase index
 

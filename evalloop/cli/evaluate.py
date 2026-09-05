@@ -22,6 +22,7 @@ from evalloop.config import ConfigKind, Problem, load_config
 from evalloop.contracts.judgeconf import JudgeConfig
 from evalloop.contracts.project import ProjectConfig
 from evalloop.contracts.suite import EvalSuite
+from evalloop.contracts.tools import ToolRegistry
 from evalloop.contracts.trace import Trace
 from evalloop.evaluate.registry import build_suite
 from evalloop.evaluate.runner import RunSummary, run_suite
@@ -36,12 +37,21 @@ __all__ = ["evaluate_command"]
 
 _SIBLINGS = {ConfigKind.JUDGES: "judges.yaml", ConfigKind.PROJECT: "project.yaml"}
 
+_TOOLS_FILE = "tools.yaml"
+"""Optional, unlike the two above.
+
+A suite with no tool checks needs no registry, and demanding one would put a
+file in front of every user to serve the subset who run `tool_registry_check`
+or `tool_selection`. Those two report the absence themselves, by name, when
+they are actually configured (plan/002 section 2)."""
+
 
 @dataclass(frozen=True, slots=True)
 class _Configs:
     suite: EvalSuite
     project: ProjectConfig
     judges: dict[str, JudgeConfig]
+    registry: ToolRegistry | None = None
 
 
 def evaluate_command(
@@ -72,6 +82,7 @@ def evaluate_command(
         configs.suite,
         configs.judges,
         cache=None if no_cache else PostgresCache(engine),
+        registry=configs.registry,
     )
     if not built.ok:
         for message in built.errors:
@@ -148,6 +159,14 @@ def _load_configs(suite_file: Path) -> tuple[_Configs | None, list[Problem]]:
         if config is not None:
             loaded[kind] = config.model
 
+    registry: ToolRegistry | None = None
+    tools_path = directory / _TOOLS_FILE
+    if tools_path.exists():
+        tools_config, tools_problems = load_config(tools_path, kind=ConfigKind.TOOLS)
+        problems.extend(tools_problems)
+        if tools_config is not None and isinstance(tools_config.model, ToolRegistry):
+            registry = tools_config.model
+
     if problems or suite_config is None:
         return None, problems
 
@@ -156,7 +175,10 @@ def _load_configs(suite_file: Path) -> tuple[_Configs | None, list[Problem]]:
     assert isinstance(suite_config.model, EvalSuite)
     assert isinstance(project, ProjectConfig)
     assert isinstance(judges, dict)
-    return _Configs(suite=suite_config.model, project=project, judges=judges), []
+    return (
+        _Configs(suite=suite_config.model, project=project, judges=judges, registry=registry),
+        [],
+    )
 
 
 def _load_traces(
