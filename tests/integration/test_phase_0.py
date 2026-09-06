@@ -44,7 +44,7 @@ runner = CliRunner()
 EXAMPLE = Path("examples/support-bot")
 
 TRACES = 14
-EVALUATORS = 6
+EVALUATORS = 7
 
 # Expected outcomes, hand-checkable against examples/support-bot/traces.jsonl.
 # The mock judge always answers True, so `policy_followed` fails on exactly the
@@ -61,6 +61,10 @@ EXPECTED = {
     # one of its answers. The mock judge picks the alphabetically first tool in
     # the catalogue, so this fails everywhere the agent did something else.
     "tool_selection": {"pass": 1, "fail": 13, "n/a": 0},
+    # Every trace has a reply, and the mock judge answers `consistent: true`
+    # from the schema, so this passes throughout. A real judge is what makes
+    # the column interesting.
+    "text_matches_tools": {"pass": TRACES, "fail": 0, "n/a": 0},
     "policy_followed": {"pass": 5, "fail": 7, "n/a": 2},
     "escalation_correct": {"pass": 0, "fail": 0, "n/a": TRACES},
 }

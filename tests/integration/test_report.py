@@ -120,6 +120,16 @@ def test_coverage_is_reported_beside_the_tables(env: Path) -> None:
     assert "agreed" in output
 
 
+def test_text_consistency_is_reported_as_its_own_section(env: Path) -> None:
+    """The third axis. The mock judge answers `consistent: true` from the
+    schema, so this exercises the clean branch; the failing branch is pinned in
+    the unit tests, where the answer can be dictated."""
+    _evaluated(env)
+    output = _report()
+    assert "No reply contradicted its calls" in output
+    assert "consistent 14" in output
+
+
 def test_it_defaults_to_the_most_recent_run(env: Path) -> None:
     _evaluated(env)
     assert "Wrong tool selections" in _report()
@@ -136,6 +146,7 @@ def test_a_run_with_no_tool_checks_says_so(env: Path) -> None:
     """Distinct from finding nothing wrong, and the message names what it looked
     for so a renamed evaluator id is diagnosable."""
     _evaluated(env)
-    result = runner.invoke(app, ["report", "tools", "--selection", "absent", "--registry", "gone"])
+    missing = ["--selection", "absent", "--registry", "gone", "--consistency", "missing"]
+    result = runner.invoke(app, ["report", "tools", *missing])
     assert result.exit_code == 1
     assert "no tool checks" in " ".join(result.output.split())

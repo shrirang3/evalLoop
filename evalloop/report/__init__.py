@@ -6,6 +6,7 @@ want the handful of patterns inside them.
 """
 
 from evalloop.report.tool_calls import (
+    ContradictionRow,
     SelectionRow,
     ToolCallReport,
     ViolationRow,
@@ -13,6 +14,7 @@ from evalloop.report.tool_calls import (
 )
 
 __all__ = [
+    "ContradictionRow",
     "SelectionRow",
     "ToolCallReport",
     "ViolationRow",

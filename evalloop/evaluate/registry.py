@@ -13,11 +13,18 @@ from dataclasses import dataclass, field
 
 from evalloop.contracts.judgeconf import JudgeConfig
 from evalloop.contracts.protocols import Evaluator
-from evalloop.contracts.suite import EvalSuite, EvaluatorSpec, LLMQuestionSpec, ToolSelectionSpec
+from evalloop.contracts.suite import (
+    EvalSuite,
+    EvaluatorSpec,
+    LLMQuestionSpec,
+    TextMatchesToolsSpec,
+    ToolSelectionSpec,
+)
 from evalloop.contracts.tools import ToolRegistry
 from evalloop.evaluate.deterministic.exact import ExactMatchEvaluator
 from evalloop.evaluate.deterministic.json_match import JsonMatchEvaluator
 from evalloop.evaluate.deterministic.registry_check import ToolRegistryCheckEvaluator
+from evalloop.evaluate.llm.consistency import CONSISTENCY_SCHEMA, TextMatchesToolsEvaluator
 from evalloop.evaluate.llm.question import LLMQuestionEvaluator
 from evalloop.evaluate.llm.selection import ToolSelectionEvaluator, selection_schema
 from evalloop.judge import make_provider
@@ -88,6 +95,8 @@ def build_suite(
                 _add_llm(built, spec, judges, cache)
             elif isinstance(spec, ToolSelectionSpec):
                 _add_selection(built, spec, judges, cache, registry)
+            elif isinstance(spec, TextMatchesToolsSpec):
+                _add_consistency(built, spec, judges, cache, registry)
             else:
                 _add_deterministic(built, spec, registry)
         except (ValueError, KeyError, TypeError) as exc:
@@ -178,3 +187,37 @@ def _add_selection(
     )
     built.judges[spec.id] = client
     built.evaluators.append(ToolSelectionEvaluator(spec, registry, client.version_hash))
+
+
+def _add_consistency(
+    built: BuiltSuite,
+    spec: TextMatchesToolsSpec,
+    judges: dict[str, JudgeConfig],
+    cache: CacheBackend | None,
+    registry: ToolRegistry | None,
+) -> None:
+    """A registry is optional here, unlike the other two tool checks.
+
+    Tool *names* are enough to ask whether a reply matches its calls. Descriptions
+    make the judge better informed - "irreversible" changes how a hedged reply
+    reads - so they are folded into the judge version when present, and their
+    absence is not an error.
+    """
+    config = judges.get(spec.judge)
+    if config is None:
+        raise KeyError(
+            f"judge '{spec.judge}' is not declared in judges.yaml; "
+            f"declared: {', '.join(sorted(judges)) or '(none)'}"
+        )
+
+    descriptions = registry.catalogue() if registry is not None and spec.describe_tools else ""
+    client = JudgeClient(
+        config,
+        make_provider(config.provider),
+        system_prompt=spec.system_prompt,
+        questions=[spec.type, descriptions],
+        response_schema=CONSISTENCY_SCHEMA,
+        cache=cache,
+    )
+    built.judges[spec.id] = client
+    built.evaluators.append(TextMatchesToolsEvaluator(spec, client.version_hash, registry))

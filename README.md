@@ -25,8 +25,9 @@ evalloop report tools                                      # the wrong-tool tabl
 ```
 
 `evaluate` prints per-check pass / fail / not-applicable with cost and cache hits. `report tools`
-rolls those results into the two tables that matter — which tool was called where the judge chose
-another, and which calls were illegal outright:
+rolls those results into the three tables that matter — which tool was called where the judge chose
+another, which calls were illegal outright, and where the reply describes something the calls
+never did:
 
 ```
 Wrong tool selections
@@ -41,6 +42,11 @@ Registry violations
   unregistered_tool         refund_order_now  1    sb-0417
   duplicate_side_effecting  issue_refund      1    sb-0102
   clean 8 · no tool calls 4
+
+Reply contradicts the calls
+  trace    called               contradiction
+  sb-0417  open_warranty_claim  reply says "I've processed your full refund"
+  consistent 13 · no reply 0 · invalid answers 0
 ```
 
 No labels anywhere in that. Everything above runs today; see [Status](#status) for what does not.
@@ -87,7 +93,7 @@ evalloop/contracts/   frozen data contracts — trace, suite, tools, result
 evalloop/ingest/      connectors, column mapping, redaction
 evalloop/judge/       provider clients, schema-forced output, cache
 evalloop/store/       Postgres metastore, Parquet traces, artifact store
-evalloop/evaluate/    deterministic checks · judge questions · tool selection
+evalloop/evaluate/    deterministic checks · judge questions · tool selection · consistency
 evalloop/report/      rollups over stored results
 evalloop/cli/         validate · ingest · evaluate · report
 ```
@@ -141,10 +147,12 @@ tools:
 |---|---|---|
 | `tool_registry_check` | is this call legal? | tool that does not exist · not permitted at this node · arguments off-schema · side-effecting call repeated |
 | `tool_selection` | which tool *should* have been called? | wrong choice among legal tools — the judge picks from the catalogue **without seeing the call**, and every tool called must be in its `acceptable` set |
+| `text_matches_tools` | does the reply describe what the calls did? | right tool, wrong words — the call opened a warranty claim and the reply says "I've processed your full refund" |
 
 `tool_registry_check` is objective, so it is the deterministic floor every promotion gate must
 contain. `tool_selection` computes a target where ground truth would have stored one, so its rows
-carry the judge hash and support relative claims only.
+carry the judge hash and support relative claims only. `text_matches_tools` needs no target at all —
+a reply should always match its calls, so consistency *is* the answer and a mismatch is a verdict.
 
 **Ground truth stays optional**, with two jobs and neither of them tool correctness: `policy_followed`
 and friends are *labels* feeding the judgecard; `expected_tool_calls` and `expected_response` are
@@ -199,7 +207,7 @@ Each is enforced by a test, not by convention.
 | | |
 |---|---|
 | ✅ P0.1–P0.8 | contracts, metastore, `validate`, JSONL ingest, deterministic + judge evaluators, cache, CI |
-| ✅ plan/002 | tool registry, `tool_registry_check`, `tool_selection`, `report tools` |
+| ✅ plan/002 | tool registry, all three tool checks, `report tools` |
 | ⬜ P1 · P2.5 | real connectors, redaction, splits, latent ground-truth harvesting |
 | ⬜ P3a → P6 | `judge-health`, judgecard, feedback compiler, LoRA training, promotion gate |
 

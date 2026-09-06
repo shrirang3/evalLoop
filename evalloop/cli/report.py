@@ -23,6 +23,7 @@ report_app = typer.Typer(help="Roll stored results up into a report.", no_args_i
 
 _SELECTION_TYPE = "tool_selection"
 _REGISTRY_TYPE = "tool_registry_check"
+_CONSISTENCY_TYPE = "text_matches_tools"
 
 _COLUMNS = (
     "trace_id",
@@ -48,6 +49,10 @@ def report_tools(
         str,
         typer.Option("--registry", help="Evaluator id of the tool_registry_check."),
     ] = _REGISTRY_TYPE,
+    consistency_id: Annotated[
+        str,
+        typer.Option("--consistency", help="Evaluator id of the text_matches_tools check."),
+    ] = _CONSISTENCY_TYPE,
 ) -> None:
     """Which tools were called wrongly, and which calls were illegal."""
     console = Console()
@@ -70,12 +75,13 @@ def report_tools(
             resolved,
             _rows(session, resolved, selection_id),
             _rows(session, resolved, registry_id),
+            _rows(session, resolved, consistency_id),
         )
 
     if report.is_empty:
         console.print(
             f"run [bold]{report.run_id}[/bold] has no tool checks "
-            f"(looked for '{selection_id}' and '{registry_id}')"
+            f"(looked for '{selection_id}', '{registry_id}' and '{consistency_id}')"
         )
         console.print(
             "[dim]add tool_registry_check and tool_selection to the suite, "
@@ -109,6 +115,9 @@ def render(console: Console, report: ToolCallReport) -> None:
     if report.violations_evaluated:
         console.print()
         _render_violations(console, report)
+    if report.contradictions_evaluated:
+        console.print()
+        _render_contradictions(console, report)
 
     console.print()
     console.print(
@@ -159,4 +168,28 @@ def _render_violations(console: Console, report: ToolCallReport) -> None:
 
     console.print(
         f"  [dim]clean {report.violations_clean} · no tool calls {report.violations_skipped}[/dim]"
+    )
+
+
+def _render_contradictions(console: Console, report: ToolCallReport) -> None:
+    if not report.contradictions:
+        console.print(
+            f"[green]No reply contradicted its calls.[/green] "
+            f"{report.contradictions_consistent} trace(s) checked."
+        )
+    else:
+        table = Table(
+            title="Reply contradicts the calls", title_justify="left", box=None, padding=(0, 2)
+        )
+        table.add_column("trace", style="dim")
+        table.add_column("called")
+        table.add_column("contradiction", style="red")
+        for row in report.contradictions:
+            table.add_row(row.trace_id, row.called, row.explanation)
+        console.print(table)
+
+    console.print(
+        f"  [dim]consistent {report.contradictions_consistent}"
+        f" · no reply {report.contradictions_skipped}"
+        f" · invalid answers {report.contradictions_invalid}[/dim]"
     )

@@ -11,6 +11,8 @@ Two tables, deliberately not merged:
   claims only until the judge is calibrated (`plan/001` section 1).
 - **violations** — illegal calls. Objective, no model involved, and the reason
   a promotion gate has a floor at all.
+- **contradictions** — the reply describes something the calls did not do. Judged,
+  but with no target either way: consistency is the answer by construction.
 
 Pure functions over rows. Nothing here opens a database or prints, so the
 counting is testable without either.
@@ -23,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 __all__ = [
+    "ContradictionRow",
     "SelectionRow",
     "ToolCallReport",
     "ViolationRow",
@@ -54,6 +57,15 @@ class ViolationRow:
     example: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ContradictionRow:
+    """One trace where the reply and the calls disagree."""
+
+    trace_id: str
+    called: str
+    explanation: str
+
+
 @dataclass
 class ToolCallReport:
     """Everything the CLI renders, already counted."""
@@ -78,6 +90,15 @@ class ToolCallReport:
     violations_skipped: int = 0
     violations_evaluated: bool = False
 
+    contradictions: list[ContradictionRow] = field(default_factory=list)
+    """Every mismatch, listed rather than counted: unlike a tool name, no two
+    contradictions are the same string, so there is nothing to group by."""
+
+    contradictions_consistent: int = 0
+    contradictions_skipped: int = 0
+    contradictions_invalid: int = 0
+    contradictions_evaluated: bool = False
+
     @property
     def wrong_selections(self) -> int:
         return sum(row.count for row in self.selection)
@@ -87,14 +108,21 @@ class ToolCallReport:
         return sum(row.count for row in self.violations)
 
     @property
+    def contradicted(self) -> int:
+        return len(self.contradictions)
+
+    @property
     def is_empty(self) -> bool:
-        return not self.selection_evaluated and not self.violations_evaluated
+        return not (
+            self.selection_evaluated or self.violations_evaluated or self.contradictions_evaluated
+        )
 
 
 def build_tool_call_report(
     run_id: str,
     selection_rows: list[dict[str, Any]],
     violation_rows: list[dict[str, Any]],
+    consistency_rows: list[dict[str, Any]] | None = None,
 ) -> ToolCallReport:
     """Count a run's tool results into the two tables.
 
@@ -102,11 +130,43 @@ def build_tool_call_report(
     filtered to one evaluator id, because which evaluator carries which check is
     a suite decision and not this module's to guess.
     """
+    consistency = consistency_rows or []
     report = ToolCallReport(run_id=run_id)
     _count_selection(report, selection_rows)
     _count_violations(report, violation_rows)
-    report.traces = len({row["trace_id"] for row in [*selection_rows, *violation_rows]})
+    _count_contradictions(report, consistency)
+    report.traces = len(
+        {row["trace_id"] for row in [*selection_rows, *violation_rows, *consistency]}
+    )
     return report
+
+
+def _count_contradictions(report: ToolCallReport, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    report.contradictions_evaluated = True
+
+    found: list[ContradictionRow] = []
+    for row in rows:
+        if row.get("invalid_output"):
+            report.contradictions_invalid += 1
+            continue
+        passed = row.get("passed")
+        if passed is None:
+            report.contradictions_skipped += 1
+        elif passed:
+            report.contradictions_consistent += 1
+        else:
+            found.append(
+                ContradictionRow(
+                    trace_id=str(row["trace_id"]),
+                    called=_called(row.get("normalized_prediction")),
+                    explanation=str(row.get("explanation") or ""),
+                )
+            )
+
+    # Trace id, so the list is stable across runs of the same data.
+    report.contradictions = sorted(found, key=lambda r: r.trace_id)
 
 
 def _count_selection(report: ToolCallReport, rows: list[dict[str, Any]]) -> None:

@@ -102,7 +102,7 @@ def test_the_full_chain_writes_one_row_per_trace_and_evaluator(env: Path, sessio
     count = session.scalar(
         select(func.count()).select_from(EvalResultRow).where(EvalResultRow.run_id == run_id)
     )
-    assert count == 14 * 6  # 14 traces, 6 evaluators
+    assert count == 14 * 7  # 14 traces, 7 evaluators
 
 
 def test_every_row_records_its_evaluator_version(env: Path, session: Session) -> None:
@@ -151,7 +151,7 @@ def test_the_judge_config_is_registered_under_its_hash(env: Path, session: Sessi
     _evaluate(env, "--split", "train")
 
     used = _judge_hashes(session, _run_id(session))
-    assert len(used) == 3  # three judged checks, three different judge versions
+    assert len(used) == 4  # four judged checks, four different judge versions
 
     for judge_hash in used:
         assert session.get(JudgeConfigRow, judge_hash) is not None
@@ -215,11 +215,11 @@ def test_a_second_run_is_served_from_cache_and_costs_nothing(env: Path, session:
     _evaluate(env, "--split", "train", "--no-cache")
     output = _evaluate(env, "--split", "train")
 
-    assert "cache hits 42" in output  # 14 traces x 3 judged checks
+    assert "cache hits 56" in output  # 14 traces x 4 judged checks
     run = session.get(EvalRun, _run_id(session))
     assert run is not None
     assert run.cost_usd == 0.0
-    assert run.cache_hits == 42
+    assert run.cache_hits == 56
 
 
 def test_cache_entries_are_keyed_by_judge_version(env: Path, session: Session) -> None:
@@ -239,7 +239,7 @@ def test_cache_entries_are_keyed_by_judge_version(env: Path, session: Session) -
         select(LLMCache.judge_config_hash).where(LLMCache.judge_config_hash.in_(used))
     ).all()
 
-    assert len(cached) == 42  # 14 traces x 3 judged checks
+    assert len(cached) == 56  # 14 traces x 4 judged checks
     assert set(cached) == used
 
 
@@ -267,7 +267,7 @@ def test_editing_the_rubric_changes_the_judge_hash_and_misses_the_cache(
     # The edited question is a new judge version; the untouched ones are not.
     new_hashes = after - before
     assert len(new_hashes) == 1
-    assert len(before & after) == 2
+    assert len(before & after) == 3
 
     # And the new version has its own cache namespace, disjoint from the old
     # one. This is the property that makes recalibrating a prompt safe: the new
@@ -303,7 +303,7 @@ def test_limit_restricts_the_traces_evaluated(env: Path, session: Session) -> No
         .select_from(EvalResultRow)
         .where(EvalResultRow.run_id == _run_id(session))
     )
-    assert count == 18  # 3 traces x 6 evaluators
+    assert count == 21  # 3 traces x 7 evaluators
 
 
 def test_evaluating_before_ingesting_says_so(env: Path) -> None:

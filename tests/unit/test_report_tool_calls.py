@@ -50,8 +50,31 @@ def _registry(
     }
 
 
-def _report(selection: list[dict[str, Any]], registry: list[dict[str, Any]]) -> Any:
-    return build_tool_call_report("run-1", selection, registry)
+def _consistency(
+    trace_id: str,
+    *,
+    called: list[str] | None = None,
+    passed: bool | None = False,
+    explanation: str = "",
+    invalid: bool = False,
+) -> dict[str, Any]:
+    return {
+        "trace_id": trace_id,
+        "passed": passed,
+        "normalized_prediction": {"value": called} if called is not None else None,
+        "ground_truth": None,
+        "raw_output": None,
+        "invalid_output": invalid,
+        "explanation": explanation,
+    }
+
+
+def _report(
+    selection: list[dict[str, Any]],
+    registry: list[dict[str, Any]],
+    consistency: list[dict[str, Any]] | None = None,
+) -> Any:
+    return build_tool_call_report("run-1", selection, registry, consistency)
 
 
 # --- selection ---
@@ -225,3 +248,57 @@ def test_a_suite_with_only_one_of_the_two_checks_is_not_empty() -> None:
     assert not report.is_empty
     assert report.selection_evaluated
     assert not report.violations_evaluated
+
+
+# --- contradictions ---
+
+
+def test_contradictions_are_listed_per_trace_not_grouped() -> None:
+    """No two contradictions share a string, so there is nothing to group by -
+    unlike a tool name or a violation code."""
+    report = _report(
+        [],
+        [],
+        [
+            _consistency(
+                "t2", called=["open_warranty_claim"], explanation="reply says 'full refund'"
+            ),
+            _consistency("t1", called=[], explanation="reply says 'claim opened'"),
+        ],
+    )
+    assert [row.trace_id for row in report.contradictions] == ["t1", "t2"]  # stable order
+    assert report.contradicted == 2
+    assert report.contradictions[0].called == "none"
+
+
+def test_consistent_replies_are_counted_not_listed() -> None:
+    report = _report(
+        [],
+        [],
+        [
+            _consistency("t1", called=["issue_refund"], passed=True),
+            _consistency("t2", called=["issue_refund"], explanation="mismatch"),
+        ],
+    )
+    assert report.contradictions_consistent == 1
+    assert report.contradicted == 1
+
+
+def test_traces_with_no_reply_and_invalid_answers_are_counted_apart() -> None:
+    report = _report(
+        [],
+        [],
+        [
+            _consistency("t1", passed=None),
+            _consistency("t2", invalid=True, passed=None),
+        ],
+    )
+    assert report.contradictions_skipped == 1
+    assert report.contradictions_invalid == 1
+    assert report.contradicted == 0
+
+
+def test_a_suite_with_only_the_consistency_check_is_not_empty() -> None:
+    report = _report([], [], [_consistency("t1", passed=True)])
+    assert not report.is_empty
+    assert report.contradictions_evaluated

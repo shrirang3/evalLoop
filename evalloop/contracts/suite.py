@@ -28,6 +28,7 @@ __all__ = [
     "LLMQuestionSpec",
     "MatcherType",
     "SuiteEvaluator",
+    "TextMatchesToolsSpec",
     "ToolSelectionSpec",
 ]
 
@@ -159,6 +160,54 @@ class LLMQuestionSpec(BaseModel):
         }
 
 
+class TextMatchesToolsSpec(BaseModel):
+    """Does the reply describe what the calls actually did?
+
+    The third check `plan/002` section 2 names, and the only one of the three
+    that reads the model's prose. Right tool, wrong text is a whole failure axis
+    the other two cannot see: `issue_refund` called correctly while the reply
+    promises a warranty replacement passes both of them and is still wrong.
+
+    Unlike `LLMQuestionSpec` this needs no `ground_truth` path, and unlike
+    `ToolSelectionSpec` it computes no target. The correct answer is known in
+    advance - a reply should always match its calls - so consistency *is* the
+    target and disagreement is a verdict rather than an opinion awaiting
+    calibration.
+    """
+
+    model_config = _STRICT
+
+    id: str = Field(min_length=1)
+    type: Literal["text_matches_tools"] = "text_matches_tools"
+
+    judge: str = "default"
+
+    text: str = "output.text"
+    actual: str = "output.tool_calls"
+    """Both are shown to the judge here. Withholding the call is what makes
+    `tool_selection` blind; this check is precisely about the pair."""
+
+    describe_tools: bool = True
+    """Include each called tool's registry description, when a registry exists.
+    A judge told that `issue_refund` is irreversible reads "we'll look into it"
+    differently from a judge given only the name."""
+
+    system_prompt: str | None = None
+    holdout: bool = False
+    weight: float = Field(default=1.0, ge=0.0)
+
+    def version_payload(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "type": self.type,
+            "judge": self.judge,
+            "text": self.text,
+            "actual": self.actual,
+            "describe_tools": self.describe_tools,
+            "system_prompt": self.system_prompt,
+        }
+
+
 class ToolSelectionSpec(BaseModel):
     """Ask a judge which tool *should* have been called, without showing it the call.
 
@@ -237,7 +286,7 @@ class ToolSelectionSpec(BaseModel):
 
 
 SuiteEvaluator = Annotated[
-    EvaluatorSpec | LLMQuestionSpec | ToolSelectionSpec,
+    EvaluatorSpec | LLMQuestionSpec | ToolSelectionSpec | TextMatchesToolsSpec,
     Field(discriminator="type"),
 ]
 """Discriminated on `type`, not a plain union.

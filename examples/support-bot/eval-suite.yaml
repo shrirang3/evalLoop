@@ -1,6 +1,6 @@
 # Checks that run against a support-bot snapshot.
 #
-# Two deterministic, three judged. The deterministic half is the important one:
+# Two deterministic, four judged. The deterministic half is the important one:
 # a judge cannot game a JSON parser, which is what makes it admissible as the
 # floor of a promotion gate (plan/001 section 3.2.1).
 #
@@ -12,7 +12,7 @@
 # already wrote, and ground truth is a column nobody emits.
 
 suite: support-bot-v1
-description: Tool-call legality and selection, plus policy and escalation judgements
+description: Tool-call legality, selection and text consistency, plus policy judgements
 
 evaluators:
   # ---- deterministic, no ground truth needed -----------------------------
@@ -87,6 +87,18 @@ evaluators:
       You choose the correct tool for a customer-support request. Decide from
       the request and the policy alone. Prefer a read-only tool when the
       request does not clearly call for a state change.
+
+  # Right tool, wrong text is its own failure: the call opened a warranty
+  # claim and the reply says "I've processed your full refund". Both other
+  # tool checks pass on that trace.
+  #
+  # No ground truth and no computed target - a reply should always match its
+  # calls, so consistency is the target and a mismatch is a verdict.
+  - id: text_matches_tools
+    type: text_matches_tools
+    judge: default
+    text: output.text
+    actual: output.tool_calls
 
   - id: policy_followed
     type: llm_question

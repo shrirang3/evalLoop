@@ -4,6 +4,10 @@ from evalloop.evaluate.base import not_applicable, version_of
 from evalloop.evaluate.deterministic.exact import ExactMatchEvaluator
 from evalloop.evaluate.deterministic.json_match import JsonMatchEvaluator
 from evalloop.evaluate.deterministic.registry_check import ToolRegistryCheckEvaluator
+from evalloop.evaluate.llm.consistency import (
+    TextMatchesToolsEvaluator,
+    render_consistency_prompt,
+)
 from evalloop.evaluate.llm.question import LLMQuestionEvaluator, render_prompt
 from evalloop.evaluate.llm.selection import (
     ToolSelectionEvaluator,
@@ -29,10 +33,12 @@ __all__ = [
     "LLMQuestionEvaluator",
     "QuestionSummary",
     "RunSummary",
+    "TextMatchesToolsEvaluator",
     "ToolRegistryCheckEvaluator",
     "ToolSelectionEvaluator",
     "build_suite",
     "not_applicable",
+    "render_consistency_prompt",
     "render_prompt",
     "render_selection_prompt",
     "run_suite",
