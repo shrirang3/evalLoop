@@ -28,7 +28,18 @@ from evalloop.contracts.tools import ToolRegistry
 from evalloop.contracts.trace import Trace, canonical_json
 from evalloop.evaluate.base import not_applicable, resolve_or_missing, version_of
 
-__all__ = ["ToolRegistryCheckEvaluator"]
+__all__ = ["ADVISORY_CODES", "ToolRegistryCheckEvaluator"]
+
+_ADVISORY = frozenset({"duplicate_undeclared"})
+"""Recorded, reported, and not a failure.
+
+A repeated call to a tool whose `side_effecting` the registry never declares is
+unclassifiable, not wrong. Failing it would be a false failure - the expensive
+direction (plan/001 section 5.3) - and passing it silently would hide the one
+thing the author needs to fix.
+"""
+
+ADVISORY_CODES: frozenset[str] = _ADVISORY
 
 
 class ToolRegistryCheckEvaluator:
@@ -82,65 +93,10 @@ class ToolRegistryCheckEvaluator:
             # looked at. Pass rate stays "of the traces that called something".
             return not_applicable(trace, self.id, self._version, "trace has no tool calls")
 
-        default_node = self._trace_node(trace)
-        problems: list[str] = []
-        notes: list[str] = []
-        seen: dict[str, int] = {}
-
-        for index, call in enumerate(calls):
-            name = _attr(call, "name")
-            if not isinstance(name, str):
-                problems.append(f"call[{index}] has no tool name")
-                continue
-
-            node = _attr(call, "node") or default_node
-            arguments = _attr(call, "arguments") or {}
-
-            if not self.registry.has(name):
-                known = ", ".join(sorted(self.registry.tools))
-                problems.append(
-                    f"call[{index}] '{name}' is not a registered tool; registered: {known}"
-                )
-                continue
-
-            if not self.registry.knows_node(node):
-                problems.append(
-                    f"call[{index}] '{name}' claims node '{node}', which is not in the registry"
-                )
-            elif name not in self.registry.allowed(node):
-                allowed = ", ".join(sorted(self.registry.allowed(node)))
-                problems.append(
-                    f"call[{index}] '{name}' is not permitted at node '{node}'; "
-                    f"permitted here: {allowed}"
-                )
-
-            if self.check_arguments and isinstance(arguments, dict):
-                problems.extend(
-                    f"call[{index}] '{name}': {reason}"
-                    for reason in self.registry.check_arguments(name, arguments)
-                )
-
-            if self.check_duplicates:
-                fingerprint = canonical_json({"name": name, "arguments": arguments})
-                first = seen.get(fingerprint)
-                if first is not None:
-                    side_effecting = self.registry.tools[name].side_effecting
-                    if side_effecting:
-                        problems.append(
-                            f"call[{index}] '{name}' repeats call[{first}] with identical "
-                            f"arguments, and the tool is side-effecting"
-                        )
-                    elif side_effecting is None:
-                        notes.append(
-                            f"call[{index}] '{name}' repeats call[{first}], but the registry "
-                            f"does not declare whether '{name}' is side-effecting"
-                        )
-                else:
-                    seen[fingerprint] = index
-
-        prediction = [_summarize(call) for call in calls]
-        passed = not problems
-        explanation = "; ".join(problems) if problems else ("; ".join(notes) or None)
+        violations = self._violations(trace, calls)
+        failures = [v for v in violations if v["code"] not in _ADVISORY]
+        passed = not failures
+        reported = failures or violations
 
         return EvalResult(
             trace_id=trace.trace_id,
@@ -148,10 +104,87 @@ class ToolRegistryCheckEvaluator:
             evaluator_version=self._version,
             score=1.0 if passed else 0.0,
             passed=passed,
-            normalized_prediction=prediction,
+            normalized_prediction=[_summarize(call) for call in calls],
             ground_truth=None,
-            explanation=explanation,
+            explanation="; ".join(v["message"] for v in reported) or None,
+            # Structured as well as prose, so the wrong-tool report groups by
+            # `code` instead of pattern-matching an English sentence that was
+            # written for a human.
+            raw_output={"violations": violations} if violations else None,
         )
+
+    def _violations(self, trace: Trace, calls: Any) -> list[dict[str, Any]]:
+        default_node = self._trace_node(trace)
+        found: list[dict[str, Any]] = []
+        seen: dict[str, int] = {}
+
+        def record(code: str, index: int, tool: str | None, message: str) -> None:
+            found.append(
+                {"code": code, "call": index, "tool": tool, "message": f"call[{index}] {message}"}
+            )
+
+        for index, call in enumerate(calls):
+            name = _attr(call, "name")
+            if not isinstance(name, str):
+                record("unnamed_call", index, None, "has no tool name")
+                continue
+
+            node = _attr(call, "node") or default_node
+            arguments = _attr(call, "arguments") or {}
+
+            if not self.registry.has(name):
+                known = ", ".join(sorted(self.registry.tools))
+                record(
+                    "unregistered_tool",
+                    index,
+                    name,
+                    f"'{name}' is not a registered tool; registered: {known}",
+                )
+                continue
+
+            if not self.registry.knows_node(node):
+                record(
+                    "unknown_node",
+                    index,
+                    name,
+                    f"'{name}' claims node '{node}', which is not in the registry",
+                )
+            elif name not in self.registry.allowed(node):
+                allowed = ", ".join(sorted(self.registry.allowed(node)))
+                record(
+                    "not_permitted_at_node",
+                    index,
+                    name,
+                    f"'{name}' is not permitted at node '{node}'; permitted here: {allowed}",
+                )
+
+            if self.check_arguments and isinstance(arguments, dict):
+                for reason in self.registry.check_arguments(name, arguments):
+                    record("invalid_arguments", index, name, f"'{name}': {reason}")
+
+            if self.check_duplicates:
+                fingerprint = canonical_json({"name": name, "arguments": arguments})
+                first = seen.get(fingerprint)
+                if first is None:
+                    seen[fingerprint] = index
+                elif self.registry.tools[name].side_effecting:
+                    record(
+                        "duplicate_side_effecting",
+                        index,
+                        name,
+                        f"'{name}' repeats call[{first}] with identical arguments, "
+                        f"and the tool is side-effecting",
+                    )
+                elif self.registry.tools[name].side_effecting is None:
+                    record(
+                        "duplicate_undeclared",
+                        index,
+                        name,
+                        f"'{name}' repeats call[{first}], but the registry does not "
+                        f"declare whether '{name}' is side-effecting",
+                    )
+
+        return found
 
     def _trace_node(self, trace: Trace) -> str | None:
         """A trace-level node, for products that record one per turn not per call."""

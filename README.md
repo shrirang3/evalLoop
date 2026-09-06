@@ -21,10 +21,29 @@ evalloop validate examples/support-bot/*.yaml              # every config, line-
 evalloop ingest   examples/support-bot/project.yaml --dry-run --limit 5
 evalloop ingest   examples/support-bot/project.yaml        # → immutable snapshot
 evalloop evaluate examples/support-bot/eval-suite.yaml --split train
+evalloop report tools                                      # the wrong-tool table
 ```
 
-Last command prints a per-check table with pass / fail / not-applicable, cost, and cache hits.
-Everything above runs today; see [Status](#status) for what does not.
+`evaluate` prints per-check pass / fail / not-applicable with cost and cache hits. `report tools`
+rolls those results into the two tables that matter — which tool was called where the judge chose
+another, and which calls were illegal outright:
+
+```
+Wrong tool selections
+  called                     judge says            n    example
+  issue_refund               open_warranty_claim   4    sb-0418
+  none                       lookup_refund_status  4    sb-0433
+  cancel_order,issue_refund  cancel_order          1    sb-0421
+  agreed 1 · not applicable 0 · invalid answers 0
+
+Registry violations
+  code                      tools             n    example
+  unregistered_tool         refund_order_now  1    sb-0417
+  duplicate_side_effecting  issue_refund      1    sb-0102
+  clean 8 · no tool calls 4
+```
+
+No labels anywhere in that. Everything above runs today; see [Status](#status) for what does not.
 
 ## Architecture
 
@@ -66,10 +85,11 @@ be answered by the old rubric's reply.
 ```
 evalloop/contracts/   frozen data contracts — trace, suite, tools, result
 evalloop/ingest/      connectors, column mapping, redaction
-evalloop/evaluate/    deterministic checks · judge questions · tool selection
 evalloop/judge/       provider clients, schema-forced output, cache
 evalloop/store/       Postgres metastore, Parquet traces, artifact store
-evalloop/cli/         validate · ingest · evaluate
+evalloop/evaluate/    deterministic checks · judge questions · tool selection
+evalloop/report/      rollups over stored results
+evalloop/cli/         validate · ingest · evaluate · report
 ```
 
 `judgecard/`, `feedback/`, `train/` and `promote/` exist as empty packages — the interfaces are
@@ -179,7 +199,7 @@ Each is enforced by a test, not by convention.
 | | |
 |---|---|
 | ✅ P0.1–P0.8 | contracts, metastore, `validate`, JSONL ingest, deterministic + judge evaluators, cache, CI |
-| ✅ plan/002 | tool registry, `tool_registry_check`, `tool_selection` |
+| ✅ plan/002 | tool registry, `tool_registry_check`, `tool_selection`, `report tools` |
 | ⬜ P1 · P2.5 | real connectors, redaction, splits, latent ground-truth harvesting |
 | ⬜ P3a → P6 | `judge-health`, judgecard, feedback compiler, LoRA training, promotion gate |
 
