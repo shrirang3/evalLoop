@@ -54,6 +54,13 @@ def env(
     for name, old, new in (
         ("project.yaml", "name: support-bot", f"name: {unique_name}"),
         ("judges.yaml", "provider: anthropic", "provider: mock"),
+        # A distinct model name gives this file its own judge version, and
+        # therefore its own cache namespace. The metastore is shared across the
+        # whole integration suite, and `llm_cache` rows are keyed by judge hash
+        # with no run column - so a test that edits trace content writes cache
+        # rows that another test's global count would pick up. Editing traces is
+        # exactly what this fixture does.
+        ("judges.yaml", "model: claude-sonnet-5", "model: stub-report"),
     ):
         path = tmp_path / name
         path.write_text(path.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")

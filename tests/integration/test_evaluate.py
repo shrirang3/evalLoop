@@ -223,6 +223,14 @@ def test_a_second_run_is_served_from_cache_and_costs_nothing(env: Path, session:
 
 
 def test_cache_entries_are_keyed_by_judge_version(env: Path, session: Session) -> None:
+    """`llm_cache` has no run column, so this count is global per judge hash.
+
+    Any other integration test that evaluates *edited* trace content under this
+    same judge config would add rows here and break the number. Such a test must
+    give itself a distinct judge - a different `model` name is enough - the way
+    `test_report.py` does. Cache entries are shared on purpose; the counting is
+    what needs isolating.
+    """
     _ingest(env)
     _evaluate(env, "--split", "train", "--no-cache")
 
