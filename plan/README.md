@@ -8,6 +8,7 @@ their history.
 | [`000-build-plan.md`](000-build-plan.md) | Full phased build plan: stack, repo layout, P0 (contracts) → P6 (promotion gate), P7+ roadmap, cross-cutting engineering rules, per-phase verification commands |
 | [`001-trusted-judge-architecture.md`](001-trusted-judge-architecture.md) | Supersedes parts of 000 (P3, P4, P6). Ground truth is no longer a precondition: trusted-judge default path, capability tiers, two-model topology, provenance-not-prohibition, human calibration loop, dataset choices |
 | [`002-tool-registry-and-selection.md`](002-tool-registry-and-selection.md) | Supersedes parts of 000 (P2.1, P4.2). Tool correctness without ground truth: node-scoped tool registry, three split checks, select-mode judging, ambiguity abstention, `judge_tool_selection` target source |
+| [`003-tool-constraints.md`](003-tool-constraints.md) | Supersedes 002 §7. No precondition engine: the constraint is already in the tool description and the judge already reads it. Prefer `ToolCall.error`; feed the judge only what the agent had |
 
 ## Decisions taken
 
@@ -23,6 +24,7 @@ their history.
 | Human involvement | ~150 labels, two pools, blind ([`001`](001-trusted-judge-architecture.md) §6) | ~90 min of one domain expert makes the judgecard real. Anchor pool gives unbiased κ, targeted pool gives FAIL-class precision — the metric that actually protects training data. |
 | Tool correctness | **Registry, not ground truth** ([`002`](002-tool-registry-and-selection.md) §1–2) | No product emits an `expected_tool_calls` column, so the highest-value check silently abstained on every real trace. A team's tool definitions already exist in their agent code — asking for an export is not asking for annotation. Gives T0 a deterministic tool check on a customer's first run. |
 | Tool judging | **Select, don't grade** ([`002`](002-tool-registry-and-selection.md) §3) | Showing the judge the call it is assessing is the anchoring failure `001` §6.2 forbids for humans. Blind selection from an enum-constrained catalogue is also a closed answer space: fewer parse failures, measurable per-trace self-consistency, and a cheap model is enough. |
+| Tool constraints | **Description, not expression engine** ([`003`](003-tool-constraints.md)) | A rule the model must obey is already in the tool description, and the description already reaches the judge — a precondition restates it for determinism alone. The cost was a parser, a binding config, `occurred_at`, and a second copy of the policy free to drift in the false-fail direction. Where the product enforces a rule, `ToolCall.error` is a better answer than any restatement. |
 
 ## Phase index
 
