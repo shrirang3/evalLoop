@@ -2,9 +2,9 @@
 
 **An evaluation and improvement control plane for AI products.**
 
-Point it at production traces. Declare checks in YAML. Find out whether your judge is trustworthy
-before you trust its numbers, compile failures into training data that records where every signal
-came from, and promote a candidate only against something the training loop could not influence.
+Point it at production traces and your agent's tool definitions. Get back the tool calls that were
+wrong — a tool that does not exist, one not permitted where it fired, a defensible tool with an
+undefensible reply, a call the API rejected while the agent said it went through.
 
 **Ground truth is not a precondition.** Most teams have traces and no labels. Tool correctness comes
 from a registry you already wrote; judge questions report their own provenance. Nothing is blocked
@@ -15,20 +15,25 @@ for lack of a dataset you were never going to have.
 ## Quickstart
 
 ```bash
-make install && make up                                    # deps + Postgres
-
-evalloop validate examples/support-bot/*.yaml              # every config, line-accurate errors
-evalloop ingest   examples/support-bot/project.yaml --dry-run --limit 5
-evalloop ingest   examples/support-bot/project.yaml        # → immutable snapshot
-evalloop evaluate examples/support-bot/eval-suite.yaml --split train
-evalloop report tools                                      # the wrong-tool table
-evalloop report tools --out report.md                      # ...and as Markdown
+pip install evalloop
 ```
 
-`evaluate` prints per-check pass / fail / not-applicable with cost and cache hits. `report tools`
-rolls those results into the four tables that matter — which tool was called where the judge chose
-another, which calls were illegal outright, where the reply describes something the calls never
-did, and which calls the tool itself rejected:
+```python
+from evalloop import EvalLoop
+
+report = EvalLoop(
+    judge="anthropic:claude-sonnet-5",
+    tools="tools.yaml",              # your agent's tool definitions, exported
+    traces="traces.jsonl",           # your production traces
+    policy="Refunds are permitted within 30 days of purchase.",
+).run()
+
+report.print()                       # the tables below
+report.to_markdown("report.md")      # ...and as a file
+```
+
+No database, no migration, no config files beyond the two you point at — and
+`tools=` takes a plain dict if you'd rather not have even those. What comes back:
 
 ```
 Wrong tool selections
@@ -44,18 +49,51 @@ Registry violations
   duplicate_side_effecting  issue_refund      1    sb-0102
   clean 8 · no tool calls 4
 
-Reply contradicts the calls
-  trace    called               contradiction
-  sb-0417  open_warranty_claim  reply says "I've processed your full refund"
-  consistent 13 · no reply 0 · invalid answers 0
-
 Calls the tool rejected
   tool          error                                                  n    example
   issue_refund  POLICY_VIOLATION: order is 45 days old, window is 30   1    sb-0417
   succeeded 1 · no outcome recorded 12
 ```
 
-No labels anywhere in that. Everything above runs today; see [Status](#status) for what does not.
+**No labels anywhere in that.**
+
+### Everything the constructor takes
+
+```python
+EvalLoop(
+    judge="anthropic:claude-sonnet-5",     # or a JudgeConfig, or {"default": ..., "strong": ...}
+    traces="traces.jsonl",                 # or a list of dicts, or Trace objects
+    tools="tools.yaml",                    # or a dict, or a ToolRegistry, or omitted
+    mapping={"trace_id": "id", ...},       # only if traces aren't already in trace shape
+    policy="Refunds within 30 days.",      # rules the judge should apply
+    checks=[                               # defaults to all four
+        registry_check(),
+        tool_call_outcome(),
+        tool_selection(policy=...),
+        text_matches_tools(),
+        llm_question("Was the tone empathetic?", id="tone"),
+    ],
+)
+```
+
+`report.results` is every row, `report.failures()` only the ones where a check
+ran and said no, `report.cost_usd` is what it spent.
+
+### Or the CLI, when you want provenance
+
+The Python path runs nothing past your process. When results need to be
+comparable six months later — versioned snapshots, hashed judges, rows in
+Postgres — the same engine takes YAML:
+
+```bash
+make install && make up
+evalloop validate examples/support-bot/*.yaml
+evalloop ingest   examples/support-bot/project.yaml
+evalloop evaluate examples/support-bot/eval-suite.yaml --split train
+evalloop report   tools --out report.md
+```
+
+Everything above runs today; see [Status](#status) for what does not.
 
 ## Architecture
 
@@ -101,6 +139,7 @@ evalloop/judge/       provider clients, schema-forced output, cache
 evalloop/store/       Postgres metastore, Parquet traces, artifact store
 evalloop/evaluate/    deterministic checks · judge questions · tool selection · consistency
 evalloop/report/      rollups over stored results
+evalloop/api.py       the Python entry point — no database
 evalloop/cli/         validate · ingest · evaluate · report
 ```
 

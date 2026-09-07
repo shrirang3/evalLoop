@@ -143,9 +143,9 @@ def render(console: Console, report: ToolCallReport) -> None:
 
     console.print()
     console.print(
-        "[dim]Selection is judge-derived: relative claims only until the judge is "
-        "calibrated.\nSelf-consistency, and the abstention it gates, arrive with "
-        "judge-health (P3a).[/dim]"
+        "[dim]Selection and consistency are judge-derived: relative claims only until "
+        "the judge is calibrated.\nRegistry and outcome checks are objective — no model "
+        "in either.[/dim]"
     )
 
 

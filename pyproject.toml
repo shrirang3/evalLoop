@@ -70,10 +70,11 @@ packages = ["evalloop"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-# `ruff format` reformats Python blocks inside Markdown, and the plan documents
-# are append-only by design - a formatter rewriting a decision record is an
-# edit nobody chose to make.
-extend-exclude = ["plan"]
+# `ruff format` reformats Python blocks inside Markdown. Two reasons not to let
+# it: the plan documents are append-only by design, so a formatter rewriting a
+# decision record is an edit nobody chose to make; and code in prose is aligned
+# for reading, which the formatter collapses.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
