@@ -130,6 +130,31 @@ def test_text_consistency_is_reported_as_its_own_section(env: Path) -> None:
     assert "consistent 14" in output
 
 
+def test_out_writes_markdown_and_still_prints_to_the_terminal(env: Path) -> None:
+    """`--out` is additive. The terminal is where the number gets read; the file
+    is for the places it has to travel to."""
+    _evaluated(env)
+    destination = env / "out" / "report.md"
+    result = runner.invoke(app, ["report", "tools", "--out", str(destination)])
+
+    assert result.exit_code == 0, result.output
+    assert "Wrong tool selections" in " ".join(result.output.split())  # still on stdout
+    assert destination.exists()  # parent directory created
+
+    written = destination.read_text(encoding="utf-8")
+    assert written.startswith("# Tool calls")
+    assert "| called | judge says | n | example |" in written
+    assert "unregistered_tool" in written
+
+
+def test_the_written_file_is_byte_identical_across_runs(env: Path) -> None:
+    _evaluated(env)
+    first, second = env / "a.md", env / "b.md"
+    for path in (first, second):
+        assert runner.invoke(app, ["report", "tools", "--out", str(path)]).exit_code == 0
+    assert first.read_bytes() == second.read_bytes()
+
+
 def test_it_defaults_to_the_most_recent_run(env: Path) -> None:
     _evaluated(env)
     assert "Wrong tool selections" in _report()

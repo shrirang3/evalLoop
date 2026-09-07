@@ -5,6 +5,7 @@ store and the wrong shape to read: nobody wants four thousand verdicts, they
 want the handful of patterns inside them.
 """
 
+from evalloop.report.markdown import render_markdown
 from evalloop.report.tool_calls import (
     ContradictionRow,
     FailureRow,
@@ -21,4 +22,5 @@ __all__ = [
     "ToolCallReport",
     "ViolationRow",
     "build_tool_call_report",
+    "render_markdown",
 ]

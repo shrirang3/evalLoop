@@ -6,6 +6,7 @@ so it is safe to run repeatedly against the same run id.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
@@ -13,7 +14,7 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import select
 
-from evalloop.report import ToolCallReport, build_tool_call_report
+from evalloop.report import ToolCallReport, build_tool_call_report, render_markdown
 from evalloop.store.db import make_engine, session_scope
 from evalloop.store.models import EvalResultRow, EvalRun
 
@@ -58,6 +59,10 @@ def report_tools(
         str,
         typer.Option("--outcome", help="Evaluator id of the tool_call_outcome check."),
     ] = _OUTCOME_TYPE,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Also write the report to this path as Markdown."),
+    ] = None,
 ) -> None:
     """Which tools were called wrongly, and which calls were illegal."""
     console = Console()
@@ -97,6 +102,13 @@ def report_tools(
         raise typer.Exit(1)
 
     render(console, report)
+
+    if out is not None:
+        # Written in addition to the terminal render, never instead of it. The
+        # number gets read here; the file is for the places it has to travel to.
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(render_markdown(report), encoding="utf-8")
+        console.print(f"\n[dim]written to {out}[/dim]")
 
 
 def _rows(session: Any, run_id: str, evaluator_id: str) -> list[dict[str, Any]]:

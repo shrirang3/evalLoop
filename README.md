@@ -22,6 +22,7 @@ evalloop ingest   examples/support-bot/project.yaml --dry-run --limit 5
 evalloop ingest   examples/support-bot/project.yaml        # → immutable snapshot
 evalloop evaluate examples/support-bot/eval-suite.yaml --split train
 evalloop report tools                                      # the wrong-tool table
+evalloop report tools --out report.md                      # ...and as Markdown
 ```
 
 `evaluate` prints per-check pass / fail / not-applicable with cost and cache hits. `report tools`
