@@ -3,6 +3,7 @@
 from evalloop.evaluate.base import not_applicable, version_of
 from evalloop.evaluate.deterministic.exact import ExactMatchEvaluator
 from evalloop.evaluate.deterministic.json_match import JsonMatchEvaluator
+from evalloop.evaluate.deterministic.outcome import ToolCallOutcomeEvaluator
 from evalloop.evaluate.deterministic.registry_check import ToolRegistryCheckEvaluator
 from evalloop.evaluate.llm.consistency import (
     TextMatchesToolsEvaluator,
@@ -34,6 +35,7 @@ __all__ = [
     "QuestionSummary",
     "RunSummary",
     "TextMatchesToolsEvaluator",
+    "ToolCallOutcomeEvaluator",
     "ToolRegistryCheckEvaluator",
     "ToolSelectionEvaluator",
     "build_suite",

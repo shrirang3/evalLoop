@@ -102,7 +102,7 @@ def test_the_full_chain_writes_one_row_per_trace_and_evaluator(env: Path, sessio
     count = session.scalar(
         select(func.count()).select_from(EvalResultRow).where(EvalResultRow.run_id == run_id)
     )
-    assert count == 14 * 7  # 14 traces, 7 evaluators
+    assert count == 14 * 8  # 14 traces, 8 evaluators
 
 
 def test_every_row_records_its_evaluator_version(env: Path, session: Session) -> None:
@@ -303,7 +303,7 @@ def test_limit_restricts_the_traces_evaluated(env: Path, session: Session) -> No
         .select_from(EvalResultRow)
         .where(EvalResultRow.run_id == _run_id(session))
     )
-    assert count == 21  # 3 traces x 7 evaluators
+    assert count == 24  # 3 traces x 8 evaluators
 
 
 def test_evaluating_before_ingesting_says_so(env: Path) -> None:

@@ -25,9 +25,9 @@ evalloop report tools                                      # the wrong-tool tabl
 ```
 
 `evaluate` prints per-check pass / fail / not-applicable with cost and cache hits. `report tools`
-rolls those results into the three tables that matter — which tool was called where the judge chose
-another, which calls were illegal outright, and where the reply describes something the calls
-never did:
+rolls those results into the four tables that matter — which tool was called where the judge chose
+another, which calls were illegal outright, where the reply describes something the calls never
+did, and which calls the tool itself rejected:
 
 ```
 Wrong tool selections
@@ -47,6 +47,11 @@ Reply contradicts the calls
   trace    called               contradiction
   sb-0417  open_warranty_claim  reply says "I've processed your full refund"
   consistent 13 · no reply 0 · invalid answers 0
+
+Calls the tool rejected
+  tool          error                                                  n    example
+  issue_refund  POLICY_VIOLATION: order is 45 days old, window is 30   1    sb-0417
+  succeeded 1 · no outcome recorded 12
 ```
 
 No labels anywhere in that. Everything above runs today; see [Status](#status) for what does not.
@@ -148,9 +153,10 @@ tools:
 | `tool_registry_check` | is this call legal? | tool that does not exist · not permitted at this node · arguments off-schema · side-effecting call repeated |
 | `tool_selection` | which tool *should* have been called? | wrong choice among legal tools — the judge picks from the catalogue **without seeing the call**, and every tool called must be in its `acceptable` set |
 | `text_matches_tools` | does the reply describe what the calls did? | right tool, wrong words — the call opened a warranty claim and the reply says "I've processed your full refund" |
+| `tool_call_outcome` | did the call actually succeed? | legal call, right tool, matching reply — and the tool returned `POLICY_VIOLATION` while the agent said it went through. Reads the outcome your product recorded; executes nothing |
 
-`tool_registry_check` is objective, so it is the deterministic floor every promotion gate must
-contain. `tool_selection` computes a target where ground truth would have stored one, so its rows
+`tool_registry_check` and `tool_call_outcome` are objective — no model in either — which is what a
+promotion gate needs at its floor. `tool_selection` computes a target where ground truth would have stored one, so its rows
 carry the judge hash and support relative claims only. `text_matches_tools` needs no target at all —
 a reply should always match its calls, so consistency *is* the answer and a mismatch is a verdict.
 
@@ -207,7 +213,7 @@ Each is enforced by a test, not by convention.
 | | |
 |---|---|
 | ✅ P0.1–P0.8 | contracts, metastore, `validate`, JSONL ingest, deterministic + judge evaluators, cache, CI |
-| ✅ plan/002 | tool registry, all three tool checks, `report tools` |
+| ✅ plan/002–003 | tool registry, four tool checks, `report tools` |
 | ⬜ P1 · P2.5 | real connectors, redaction, splits, latent ground-truth harvesting |
 | ⬜ P3a → P6 | `judge-health`, judgecard, feedback compiler, LoRA training, promotion gate |
 

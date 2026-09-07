@@ -23,6 +23,7 @@ from evalloop.contracts.suite import (
 from evalloop.contracts.tools import ToolRegistry
 from evalloop.evaluate.deterministic.exact import ExactMatchEvaluator
 from evalloop.evaluate.deterministic.json_match import JsonMatchEvaluator
+from evalloop.evaluate.deterministic.outcome import ToolCallOutcomeEvaluator
 from evalloop.evaluate.deterministic.registry_check import ToolRegistryCheckEvaluator
 from evalloop.evaluate.llm.consistency import CONSISTENCY_SCHEMA, TextMatchesToolsEvaluator
 from evalloop.evaluate.llm.question import LLMQuestionEvaluator
@@ -35,6 +36,7 @@ __all__ = ["DETERMINISTIC", "NEEDS_REGISTRY", "PLANNED", "BuiltSuite", "build_su
 DETERMINISTIC: dict[str, Callable[[EvaluatorSpec], Evaluator]] = {
     "exact_match": ExactMatchEvaluator,
     "json_match": JsonMatchEvaluator,
+    "tool_call_outcome": ToolCallOutcomeEvaluator,
 }
 
 NEEDS_REGISTRY: dict[str, Callable[[EvaluatorSpec, ToolRegistry], Evaluator]] = {
@@ -53,6 +55,9 @@ PLANNED: dict[str, str] = {
     "regex": "P2",
     "numeric_tolerance": "P2",
     "set_comparison": "P2",
+    # Sandbox replay against a mock, per plan/000 P2. Distinct from
+    # `tool_call_outcome`, which reads the outcome the product already
+    # recorded and executes nothing (plan/003 section 2).
     "tool_call_exec": "P2",
     "python": "P2",
 }

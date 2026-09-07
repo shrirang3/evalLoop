@@ -1,6 +1,6 @@
 # Checks that run against a support-bot snapshot.
 #
-# Two deterministic, four judged. The deterministic half is the important one:
+# Three deterministic, four judged. The deterministic half is the important one:
 # a judge cannot game a JSON parser, which is what makes it admissible as the
 # floor of a promotion gate (plan/001 section 3.2.1).
 #
@@ -24,6 +24,22 @@ evaluators:
     type: tool_registry_check
     actual: output.tool_calls
 
+  # Did the call actually work? Reads the outcome the product recorded - it
+  # executes nothing (plan/003 section 2). sb-0417 is the case: a legal call,
+  # a defensible tool, a reply that matches it, and the refund was rejected
+  # for being outside the window while the agent said it went through.
+  #
+  # `not applicable` on every trace whose calls record no outcome, which is
+  # most products. That number is the finding, not a gap to paper over.
+  - id: tool_call_outcome
+    type: tool_call_outcome
+    actual: output.tool_calls
+    options:
+      # Where the failure lives inside one call. A dotted path, so a product
+      # that encodes status in its return uses `result.status` here with
+      # `failure_values: [error, failed]`.
+      error_field: error
+
   # ---- deterministic, ground truth required ------------------------------
   # Retained for scenario packs - cases the team authored, where they genuinely
   # know the answer. On a production trace with no `expected_tool_calls`
@@ -43,6 +59,12 @@ evaluators:
       treat_null_as_missing: true
       # The model passing an extra optional argument is not wrong.
       allow_extra_arguments: false
+      # Which tool with which arguments is the decision. What the tool
+      # returned, and which node made the call, are not part of it - a
+      # hand-written target will never carry them, and comparing them would
+      # report a mismatch on every trace that records an outcome.
+      # `tool_call_outcome` is what reads those.
+      ignore_paths: [result, error, node]
 
   # A coarser version of the same question: did it reach for the right tool,
   # ignoring the arguments? The pair is instructive in both directions.

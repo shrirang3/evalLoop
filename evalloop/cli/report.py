@@ -24,6 +24,7 @@ report_app = typer.Typer(help="Roll stored results up into a report.", no_args_i
 _SELECTION_TYPE = "tool_selection"
 _REGISTRY_TYPE = "tool_registry_check"
 _CONSISTENCY_TYPE = "text_matches_tools"
+_OUTCOME_TYPE = "tool_call_outcome"
 
 _COLUMNS = (
     "trace_id",
@@ -53,6 +54,10 @@ def report_tools(
         str,
         typer.Option("--consistency", help="Evaluator id of the text_matches_tools check."),
     ] = _CONSISTENCY_TYPE,
+    outcome_id: Annotated[
+        str,
+        typer.Option("--outcome", help="Evaluator id of the tool_call_outcome check."),
+    ] = _OUTCOME_TYPE,
 ) -> None:
     """Which tools were called wrongly, and which calls were illegal."""
     console = Console()
@@ -76,12 +81,14 @@ def report_tools(
             _rows(session, resolved, selection_id),
             _rows(session, resolved, registry_id),
             _rows(session, resolved, consistency_id),
+            _rows(session, resolved, outcome_id),
         )
 
     if report.is_empty:
         console.print(
             f"run [bold]{report.run_id}[/bold] has no tool checks "
-            f"(looked for '{selection_id}', '{registry_id}' and '{consistency_id}')"
+            f"(looked for '{selection_id}', '{registry_id}', '{consistency_id}' "
+            f"and '{outcome_id}')"
         )
         console.print(
             "[dim]add tool_registry_check and tool_selection to the suite, "
@@ -118,6 +125,9 @@ def render(console: Console, report: ToolCallReport) -> None:
     if report.contradictions_evaluated:
         console.print()
         _render_contradictions(console, report)
+    if report.failures_evaluated:
+        console.print()
+        _render_failures(console, report)
 
     console.print()
     console.print(
@@ -192,4 +202,30 @@ def _render_contradictions(console: Console, report: ToolCallReport) -> None:
         f"  [dim]consistent {report.contradictions_consistent}"
         f" · no reply {report.contradictions_skipped}"
         f" · invalid answers {report.contradictions_invalid}[/dim]"
+    )
+
+
+def _render_failures(console: Console, report: ToolCallReport) -> None:
+    if not report.failures:
+        console.print(
+            f"[green]No call failed at runtime.[/green] "
+            f"{report.failures_clean} trace(s) recorded an outcome."
+        )
+    else:
+        table = Table(
+            title="Calls the tool rejected", title_justify="left", box=None, padding=(0, 2)
+        )
+        table.add_column("tool", style="red")
+        table.add_column("error")
+        table.add_column("n", justify="right")
+        table.add_column("example", style="dim")
+        for row in report.failures:
+            table.add_row(row.tool, row.error, str(row.count), row.example or "")
+        console.print(table)
+
+    # Coverage first, because on most datasets it is the headline: a product
+    # that logs invocations and not returns cannot answer this at all.
+    console.print(
+        f"  [dim]succeeded {report.failures_clean}"
+        f" · no outcome recorded {report.failures_skipped}[/dim]"
     )

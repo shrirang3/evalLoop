@@ -13,6 +13,8 @@ Two tables, deliberately not merged:
   a promotion gate has a floor at all.
 - **contradictions** — the reply describes something the calls did not do. Judged,
   but with no target either way: consistency is the answer by construction.
+- **failures** — the call ran and the tool said no. The product's own verdict,
+  grouped by tool and error.
 
 Pure functions over rows. Nothing here opens a database or prints, so the
 counting is testable without either.
@@ -26,6 +28,7 @@ from typing import Any
 
 __all__ = [
     "ContradictionRow",
+    "FailureRow",
     "SelectionRow",
     "ToolCallReport",
     "ViolationRow",
@@ -66,6 +69,16 @@ class ContradictionRow:
     explanation: str
 
 
+@dataclass(frozen=True, slots=True)
+class FailureRow:
+    """One (tool, error) pair that the product itself rejected."""
+
+    tool: str
+    error: str
+    count: int
+    example: str | None = None
+
+
 @dataclass
 class ToolCallReport:
     """Everything the CLI renders, already counted."""
@@ -99,6 +112,15 @@ class ToolCallReport:
     contradictions_invalid: int = 0
     contradictions_evaluated: bool = False
 
+    failures: list[FailureRow] = field(default_factory=list)
+    failures_clean: int = 0
+    failures_skipped: int = 0
+    """Traces whose calls record no outcome at all. Usually most of them, and
+    the number is the finding: it says how much of the dataset can answer the
+    question (plan/003 section 2)."""
+
+    failures_evaluated: bool = False
+
     @property
     def wrong_selections(self) -> int:
         return sum(row.count for row in self.selection)
@@ -112,9 +134,16 @@ class ToolCallReport:
         return len(self.contradictions)
 
     @property
+    def failed_calls(self) -> int:
+        return sum(row.count for row in self.failures)
+
+    @property
     def is_empty(self) -> bool:
         return not (
-            self.selection_evaluated or self.violations_evaluated or self.contradictions_evaluated
+            self.selection_evaluated
+            or self.violations_evaluated
+            or self.contradictions_evaluated
+            or self.failures_evaluated
         )
 
 
@@ -123,6 +152,7 @@ def build_tool_call_report(
     selection_rows: list[dict[str, Any]],
     violation_rows: list[dict[str, Any]],
     consistency_rows: list[dict[str, Any]] | None = None,
+    outcome_rows: list[dict[str, Any]] | None = None,
 ) -> ToolCallReport:
     """Count a run's tool results into the two tables.
 
@@ -131,14 +161,46 @@ def build_tool_call_report(
     a suite decision and not this module's to guess.
     """
     consistency = consistency_rows or []
+    outcomes = outcome_rows or []
     report = ToolCallReport(run_id=run_id)
     _count_selection(report, selection_rows)
     _count_violations(report, violation_rows)
     _count_contradictions(report, consistency)
+    _count_failures(report, outcomes)
     report.traces = len(
-        {row["trace_id"] for row in [*selection_rows, *violation_rows, *consistency]}
+        {row["trace_id"] for row in [*selection_rows, *violation_rows, *consistency, *outcomes]}
     )
     return report
+
+
+def _count_failures(report: ToolCallReport, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    report.failures_evaluated = True
+
+    counts: Counter[tuple[str, str]] = Counter()
+    examples: dict[tuple[str, str], str] = {}
+
+    for row in rows:
+        passed = row.get("passed")
+        if passed is None:
+            report.failures_skipped += 1
+        elif passed:
+            report.failures_clean += 1
+
+        raw = row.get("raw_output")
+        found = raw.get("failures") if isinstance(raw, dict) else None
+        for failure in found if isinstance(found, list) else []:
+            if not isinstance(failure, dict):
+                continue
+            key = (str(failure.get("tool") or "—"), str(failure.get("error") or "—"))
+            counts[key] += 1
+            examples.setdefault(key, str(row["trace_id"]))
+
+    report.failures = [
+        FailureRow(tool=tool, error=error, count=count, example=examples[(tool, error)])
+        for (tool, error), count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
 
 
 def _count_contradictions(report: ToolCallReport, rows: list[dict[str, Any]]) -> None:

@@ -44,7 +44,7 @@ runner = CliRunner()
 EXAMPLE = Path("examples/support-bot")
 
 TRACES = 14
-EVALUATORS = 7
+EVALUATORS = 8
 
 # Expected outcomes, hand-checkable against examples/support-bot/traces.jsonl.
 # The mock judge always answers True, so `policy_followed` fails on exactly the
@@ -56,6 +56,11 @@ EXPECTED = {
     # never looked at (plan/002 section 2).
     "tool_registry_check": {"pass": 10, "fail": 0, "n/a": 4},
     "tool_call_match": {"pass": 5, "fail": 5, "n/a": 4},
+    # Reads the outcome the product recorded. Two traces carry one: sb-0417's
+    # refund was rejected for being outside the window, sb-0102's went through.
+    # The other twelve record nothing, and that is `n/a` rather than a pass -
+    # the number says how much of the dataset can answer the question at all.
+    "tool_call_outcome": {"pass": 1, "fail": 1, "n/a": 12},
     "tool_name_match": {"pass": 5, "fail": 2, "n/a": 7},
     # Also needs no ground truth, and reaches every trace because "no tool" is
     # one of its answers. The mock judge picks the alphabetically first tool in

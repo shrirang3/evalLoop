@@ -146,7 +146,16 @@ def test_a_run_with_no_tool_checks_says_so(env: Path) -> None:
     """Distinct from finding nothing wrong, and the message names what it looked
     for so a renamed evaluator id is diagnosable."""
     _evaluated(env)
-    missing = ["--selection", "absent", "--registry", "gone", "--consistency", "missing"]
+    missing = [
+        "--selection",
+        "absent",
+        "--registry",
+        "gone",
+        "--consistency",
+        "missing",
+        "--outcome",
+        "nowhere",
+    ]
     result = runner.invoke(app, ["report", "tools", *missing])
     assert result.exit_code == 1
     assert "no tool checks" in " ".join(result.output.split())
