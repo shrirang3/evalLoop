@@ -9,7 +9,6 @@ their history.
 | [`001-trusted-judge-architecture.md`](001-trusted-judge-architecture.md) | Supersedes parts of 000 (P3, P4, P6). Ground truth is no longer a precondition: trusted-judge default path, capability tiers, two-model topology, provenance-not-prohibition, human calibration loop, dataset choices |
 | [`002-tool-registry-and-selection.md`](002-tool-registry-and-selection.md) | Supersedes parts of 000 (P2.1, P4.2). Tool correctness without ground truth: node-scoped tool registry, three split checks, select-mode judging, ambiguity abstention, `judge_tool_selection` target source |
 | [`003-tool-constraints.md`](003-tool-constraints.md) | Supersedes 002 §7. No precondition engine: the constraint is already in the tool description and the judge already reads it. Prefer `ToolCall.error`; feed the judge only what the agent had |
-| [`004-judge-health.md`](004-judge-health.md) | Extends 001 §4 P3a and completes 002 §3.2. Probes shaped to the checks that exist (catalogue shuffle, reply padding), frozen perturbations, per-sample cache key, abstention, probe budget |
 
 ## Decisions taken
 
@@ -26,7 +25,6 @@ their history.
 | Tool correctness | **Registry, not ground truth** ([`002`](002-tool-registry-and-selection.md) §1–2) | No product emits an `expected_tool_calls` column, so the highest-value check silently abstained on every real trace. A team's tool definitions already exist in their agent code — asking for an export is not asking for annotation. Gives T0 a deterministic tool check on a customer's first run. |
 | Tool judging | **Select, don't grade** ([`002`](002-tool-registry-and-selection.md) §3) | Showing the judge the call it is assessing is the anchoring failure `001` §6.2 forbids for humans. Blind selection from an enum-constrained catalogue is also a closed answer space: fewer parse failures, measurable per-trace self-consistency, and a cheap model is enough. |
 | Tool constraints | **Description, not expression engine** ([`003`](003-tool-constraints.md)) | A rule the model must obey is already in the tool description, and the description already reaches the judge — a precondition restates it for determinism alone. The cost was a parser, a binding config, `occurred_at`, and a second copy of the policy free to drift in the false-fail direction. Where the product enforces a rule, `ToolCall.error` is a better answer than any restatement. |
-| Judge health | **Probes shaped to the check, run on a sample** ([`004`](004-judge-health.md)) | Two of the four tool checks ask a judge nobody has measured. The generic probes in `001` do not fit `tool_selection` — its position bias is *catalogue order*, and a judge picking by list position would produce a wrong-tool table indistinguishable from a real finding. Probes multiply calls, so they run on a seeded sample with the size printed beside every rate. |
 
 ## Phase index
 
