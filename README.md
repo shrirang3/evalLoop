@@ -22,17 +22,27 @@ pip install evalloop
 ```python
 from evalloop import EvalLoop
 
-report = EvalLoop(
+loop = EvalLoop(
     judge="anthropic:claude-sonnet-5",
     tools="tools.yaml",              # your agent's tool definitions, exported
     traces="traces.jsonl",           # your production traces
     policy="Refunds are permitted within 30 days of purchase.",
-).run()
+)
 
-report.print()                       # the tables below
-report.to_markdown("report.md")      # ...as a file
-report.to_dataset("feedback.jsonl")  # ...and as DPO pairs to retrain on
+report  = loop.judge()                       # 1. run the checks — costs judge calls
+dataset = loop.dataset(report)               # 2. compile the failures — costs nothing
+loop.finetune(dataset)                       # 3. P5 — refuses by name until then
+
+report.print()                               # the tables below
+report.to_markdown("report.md")              # ...as a file
+dataset.to_jsonl()                           # DPO pairs, ready for a trainer
 ```
+
+Three stages, three calls, on purpose: they fail for different reasons, cost
+different amounts, and get re-run at different cadences. Compiling takes the
+report rather than re-judging, so eligibility rules can change without paying
+for the judge twice. The CLI splits the same way — `evaluate`, `feedback build`,
+`train`.
 
 No database, no migration, no config files beyond the two you point at — and
 `tools=` takes a plain dict if you'd rather not have even those. What comes back:
@@ -127,6 +137,9 @@ Dropped
 ```
 
 Same thing from the CLI: `evalloop feedback build <run_id> --tools tools.yaml --out feedback.jsonl`.
+`dataset.to_jsonl()` is the shape TRL's `DPOTrainer` takes, so it can be handed to a trainer today —
+`loop.finetune()` exists to name what is missing (the trainer and the candidate registry, P5) rather
+than let it fail somewhere inside TRL.
 
 ### Or the CLI, when you want provenance
 

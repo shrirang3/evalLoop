@@ -6,11 +6,13 @@ Two ways in, same engine.
 
     from evalloop import EvalLoop
 
-    report = EvalLoop(
+    loop = EvalLoop(
         judge="anthropic:claude-sonnet-5",
         tools="tools.yaml",
         traces="traces.jsonl",
-    ).run()
+    )
+    report  = loop.judge()           # 1. run the checks
+    dataset = loop.dataset(report)   # 2. compile the failures into training rows
     report.print()
 
 **CLI**, for a pipeline that has to answer "did this metric move, or did the

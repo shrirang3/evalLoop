@@ -6,16 +6,20 @@ answer "did this metric move, or did the check change underneath me?" six months
 later. It is the wrong shape for finding out whether the thing works on your
 traces this afternoon.
 
-    from evalloop import EvalLoop, tool_selection, registry_check
+    from evalloop import EvalLoop
 
     loop = EvalLoop(
         judge="anthropic:claude-sonnet-5",
         tools="tools.yaml",
         traces="traces.jsonl",
-        checks=[registry_check(), tool_selection(policy="Refunds within 30 days.")],
     )
-    report = loop.run()
+
+    report  = loop.judge()               # 1. run the checks
+    dataset = loop.dataset(report)       # 2. compile the failures
+    loop.finetune(dataset)               # 3. P5, refuses by name
+
     report.print()
+    dataset.to_jsonl()
 
 **Nothing here touches a database.** No snapshot, no run row, no migration, no
 `make up`. The trade is deliberate and worth stating: results are not versioned,
@@ -28,6 +32,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Sequence
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import yaml
@@ -130,13 +135,13 @@ class Report:
         self,
         summary: RunSummary,
         tools: ToolCallReport,
-        traces: Sequence[Trace] = (),
-        registry: ToolRegistry | None = None,
+        elapsed_s: float = 0.0,
     ) -> None:
         self.summary = summary
         self.tools = tools
-        self._traces = list(traces)
-        self._registry = registry
+        self.elapsed_s = elapsed_s
+        """Wall-clock for the judging stage. Each stage reports its own, so a
+        slow pipeline can be attributed rather than guessed at."""
 
     @property
     def results(self) -> list[Any]:
@@ -164,33 +169,6 @@ class Report:
         from evalloop.cli.report import render
 
         render(console or Console(), self.tools)
-
-    def to_dataset(
-        self,
-        path: str | Path | None = None,
-        *,
-        selection_id: str = "tool_selection",
-        sealed_trace_ids: frozenset[str] = frozenset(),
-    ) -> Dataset:
-        """Compile the failures into DPO rows.
-
-        The point of the report, rather than the end of it: a `tool_selection`
-        failure already contains the correct call, so the training pair needs no
-        labels. Everything that cannot produce a target is dropped and counted -
-        read `dataset.manifest()` for the reasons.
-        """
-        by_id = {trace.trace_id: trace for trace in self._traces}
-        pairs = [
-            (by_id[r.trace_id], r)
-            for r in self.summary.results
-            if r.evaluator_id == selection_id and r.trace_id in by_id
-        ]
-        dataset = build_dpo(pairs, self._registry, sealed_trace_ids=sealed_trace_ids)
-        if path is not None:
-            destination = Path(path)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(dataset.to_jsonl(), encoding="utf-8")
-        return dataset
 
     def to_markdown(self, path: str | Path | None = None) -> str:
         text = render_markdown(self.tools)
@@ -232,10 +210,61 @@ class EvalLoop:
             raise ValueError("; ".join(built.errors))
         self._built = built
 
-    def run(self, limit: int | None = None) -> Report:
+    # --- the three stages ---------------------------------------------------
+    #
+    # Kept as separate calls rather than one pipeline, because they fail for
+    # different reasons, cost different amounts, and are re-run at different
+    # cadences: judging is per candidate, dataset generation is per training
+    # attempt, fine-tuning is per experiment. The CLI splits the same way -
+    # `evaluate`, `feedback build`, `train`.
+
+    def judge(self, limit: int | None = None) -> Report:
+        """Stage 1. Run every check over the traces. Costs judge calls."""
         traces = self.traces[:limit] if limit is not None else self.traces
+        started = perf_counter()
         summary = run_suite(traces, self._built)
-        return Report(summary, _tool_report(summary), traces, self.registry)
+        return Report(summary, _tool_report(summary), perf_counter() - started)
+
+    def dataset(
+        self,
+        report: Report,
+        path: str | Path | None = None,
+        *,
+        selection_id: str = "tool_selection",
+        sealed_trace_ids: frozenset[str] = frozenset(),
+    ) -> Dataset:
+        """Stage 2. Compile the failures into training rows. Costs nothing.
+
+        Takes the report rather than re-judging, so a dataset can be rebuilt
+        with different eligibility rules without paying for the judge twice.
+        """
+        started = perf_counter()
+        by_id = {trace.trace_id: trace for trace in self.traces}
+        pairs = [
+            (by_id[r.trace_id], r)
+            for r in report.summary.results
+            if r.evaluator_id == selection_id and r.trace_id in by_id
+        ]
+        built = build_dpo(pairs, self.registry, sealed_trace_ids=sealed_trace_ids)
+        built.elapsed_s = perf_counter() - started
+        if path is not None:
+            destination = Path(path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(built.to_jsonl(), encoding="utf-8")
+        return built
+
+    def finetune(self, dataset: Dataset, **kwargs: Any) -> None:
+        """Stage 3, not built.
+
+        Refused by name rather than left to fail somewhere inside TRL. The
+        dataset this takes is already the shape a trainer wants, so the missing
+        piece is the trainer and the candidate registry, which is P5.
+        """
+        raise NotImplementedError(
+            f"fine-tuning arrives in P5. The dataset is ready — {dataset.size} row(s), "
+            f"fingerprint {dataset.fingerprint()[:16]}… — and is written in the shape TRL's "
+            "DPOTrainer takes, so `dataset.to_jsonl()` can be handed to a trainer today."
+        )
 
 
 # --- coercion -------------------------------------------------------------

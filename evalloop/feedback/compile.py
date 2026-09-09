@@ -84,6 +84,10 @@ class Dataset:
     dropped: Counter[str] = field(default_factory=Counter)
     """Reason -> count. A failure that produced no row is never silent."""
 
+    elapsed_s: float = 0.0
+    """Wall-clock for the compile stage. Free next to judging, and worth
+    recording so that stays visible rather than assumed."""
+
     @property
     def size(self) -> int:
         return len(self.rows)

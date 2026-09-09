@@ -1,9 +1,12 @@
 """The Python entry point.
 
-One constructor, one call, no database. What is tested here is the coercion -
-every argument accepts the shape you already have - and that the result is the
-same object the CLI path produces, because two ways in must not mean two
-engines.
+One constructor, three stages, no database. The stages stay separate because
+they fail for different reasons and cost different amounts: judging spends judge
+calls, compiling spends nothing, fine-tuning spends a GPU.
+
+What is tested here is the coercion - every argument accepts the shape you
+already have - and that the result is the same object the CLI path produces,
+because two ways in must not mean two engines.
 """
 
 from __future__ import annotations
@@ -55,14 +58,14 @@ def _loop(**overrides: Any) -> EvalLoop:
 # --- it runs at all ---
 
 
-def test_a_run_needs_no_database_and_no_yaml() -> None:
-    report = _loop().run()
+def test_judging_needs_no_database_and_no_yaml() -> None:
+    report = _loop().judge()
     assert report.tools.traces == 1
     assert report.results
 
 
 def test_the_default_checks_are_the_four_that_need_no_ground_truth() -> None:
-    ids = {r.evaluator_id for r in _loop().run().results}
+    ids = {r.evaluator_id for r in _loop().judge().results}
     assert ids == {
         "tool_registry_check",
         "tool_call_outcome",
@@ -72,7 +75,7 @@ def test_the_default_checks_are_the_four_that_need_no_ground_truth() -> None:
 
 
 def test_checks_can_be_chosen_explicitly() -> None:
-    report = _loop(checks=[registry_check(), tool_call_outcome()]).run()
+    report = _loop(checks=[registry_check(), tool_call_outcome()]).judge()
     assert {r.evaluator_id for r in report.results} == {
         "tool_registry_check",
         "tool_call_outcome",
@@ -81,12 +84,12 @@ def test_checks_can_be_chosen_explicitly() -> None:
 
 def test_a_judged_check_without_a_registry_still_builds() -> None:
     """`text_matches_tools` reads a registry when there is one and works without."""
-    report = EvalLoop(judge="mock:stub-1", traces=[TRACE], checks=[text_matches_tools()]).run()
+    report = EvalLoop(judge="mock:stub-1", traces=[TRACE], checks=[text_matches_tools()]).judge()
     assert report.results
 
 
 def test_limit_caps_the_traces_evaluated() -> None:
-    report = _loop(traces=[TRACE, {**TRACE, "trace_id": "t2"}]).run(limit=1)
+    report = _loop(traces=[TRACE, {**TRACE, "trace_id": "t2"}]).judge(limit=1)
     assert report.tools.traces == 1
 
 
@@ -170,17 +173,17 @@ def test_a_bad_check_configuration_is_raised_at_construction() -> None:
 def test_failures_excludes_rows_that_never_ran() -> None:
     """A check with nothing to compare against is neither a pass nor a failure,
     and counting it as one is how a report starts lying."""
-    report = _loop().run()
+    report = _loop().judge()
     assert all(r.is_failure for r in report.failures())
 
 
 def test_failures_can_be_scoped_to_one_check() -> None:
-    report = _loop().run()
+    report = _loop().judge()
     assert all(r.evaluator_id == "tool_selection" for r in report.failures("tool_selection"))
 
 
 def test_markdown_is_returned_and_optionally_written(tmp_path: Path) -> None:
-    report = _loop().run()
+    report = _loop().judge()
     destination = tmp_path / "nested" / "report.md"
     text = report.to_markdown(destination)
     assert text.startswith("# Tool calls")
@@ -188,14 +191,14 @@ def test_markdown_is_returned_and_optionally_written(tmp_path: Path) -> None:
 
 
 def test_cost_is_reported() -> None:
-    assert _loop().run().cost_usd > 0
+    assert _loop().judge().cost_usd > 0
 
 
 # --- the dataset ---
 
 
 def test_a_failure_reaches_the_compiler(tmp_path: Path) -> None:
-    """The point of the report rather than the end of it.
+    """Stage 2, from the report stage 1 produced.
 
     The mock judge picks the alphabetically first tool - `issue_refund` - so a
     trace that called `lookup_order` disagrees and becomes a candidate pair.
@@ -209,7 +212,8 @@ def test_a_failure_reaches_the_compiler(tmp_path: Path) -> None:
             "tool_calls": [{"name": "lookup_order", "arguments": {"order_id": "O1"}}],
         },
     }
-    dataset = _loop(traces=[trace]).run().to_dataset(tmp_path / "feedback.jsonl")
+    loop = _loop(traces=[trace])
+    dataset = loop.dataset(loop.judge(), tmp_path / "feedback.jsonl")
 
     assert dataset.size == 0
     assert dataset.dropped["proposal_failed_argument_check"] == 1
@@ -218,6 +222,36 @@ def test_a_failure_reaches_the_compiler(tmp_path: Path) -> None:
 
 def test_the_manifest_explains_an_empty_dataset() -> None:
     """An empty dataset is never silent: the reasons are the useful output."""
-    manifest = _loop().run().to_dataset().manifest()
+    loop = _loop()
+    manifest = loop.dataset(loop.judge()).manifest()
     assert manifest["rows"] == 0
     assert manifest["dropped_total"] > 0
+
+
+# --- the stages are separate ---
+
+
+def test_compiling_twice_costs_no_extra_judge_calls() -> None:
+    """Stage 2 takes the report rather than re-judging, so eligibility rules can
+    be changed without paying for the judge again."""
+    loop = _loop()
+    report = loop.judge()
+    spent = report.cost_usd
+
+    loop.dataset(report)
+    loop.dataset(report, sealed_trace_ids=frozenset({"t1"}))
+    assert report.cost_usd == spent
+
+
+def test_each_stage_reports_its_own_wall_clock() -> None:
+    loop = _loop()
+    report = loop.judge()
+    assert report.elapsed_s >= 0.0
+    assert loop.dataset(report).elapsed_s >= 0.0
+
+
+def test_fine_tuning_is_refused_by_name_not_left_to_fail_inside_trl() -> None:
+    loop = _loop()
+    dataset = loop.dataset(loop.judge())
+    with pytest.raises(NotImplementedError, match="P5"):
+        loop.finetune(dataset)
