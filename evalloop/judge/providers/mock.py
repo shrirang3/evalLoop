@@ -95,6 +95,8 @@ def _from_schema(schema: dict[str, Any]) -> dict[str, Any]:
             items = spec.get("items")
             inner = items.get("enum") if isinstance(items, dict) else None
             answer[name] = [inner[0]] if isinstance(inner, list) and inner else []
+        elif spec.get("type") == "object":
+            answer[name] = {}
         elif spec.get("type") in {"number", "integer"}:
             answer[name] = 0
         else:

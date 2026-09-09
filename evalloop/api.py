@@ -46,10 +46,13 @@ from evalloop.contracts.tools import ToolRegistry
 from evalloop.contracts.trace import Trace
 from evalloop.evaluate.registry import build_suite
 from evalloop.evaluate.runner import RunSummary, run_suite
+from evalloop.feedback import Dataset, build_dpo
 from evalloop.ingest.mapping import apply_mapping
 from evalloop.report import ToolCallReport, build_tool_call_report, render_markdown
 
 __all__ = [
+    "DEFAULT_CHECKS",
+    "Dataset",
     "EvalLoop",
     "Report",
     "llm_question",
@@ -123,9 +126,17 @@ check that needs no ground truth."""
 class Report:
     """What a run produced, in the shape you want to read it."""
 
-    def __init__(self, summary: RunSummary, tools: ToolCallReport) -> None:
+    def __init__(
+        self,
+        summary: RunSummary,
+        tools: ToolCallReport,
+        traces: Sequence[Trace] = (),
+        registry: ToolRegistry | None = None,
+    ) -> None:
         self.summary = summary
         self.tools = tools
+        self._traces = list(traces)
+        self._registry = registry
 
     @property
     def results(self) -> list[Any]:
@@ -153,6 +164,33 @@ class Report:
         from evalloop.cli.report import render
 
         render(console or Console(), self.tools)
+
+    def to_dataset(
+        self,
+        path: str | Path | None = None,
+        *,
+        selection_id: str = "tool_selection",
+        sealed_trace_ids: frozenset[str] = frozenset(),
+    ) -> Dataset:
+        """Compile the failures into DPO rows.
+
+        The point of the report, rather than the end of it: a `tool_selection`
+        failure already contains the correct call, so the training pair needs no
+        labels. Everything that cannot produce a target is dropped and counted -
+        read `dataset.manifest()` for the reasons.
+        """
+        by_id = {trace.trace_id: trace for trace in self._traces}
+        pairs = [
+            (by_id[r.trace_id], r)
+            for r in self.summary.results
+            if r.evaluator_id == selection_id and r.trace_id in by_id
+        ]
+        dataset = build_dpo(pairs, self._registry, sealed_trace_ids=sealed_trace_ids)
+        if path is not None:
+            destination = Path(path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(dataset.to_jsonl(), encoding="utf-8")
+        return dataset
 
     def to_markdown(self, path: str | Path | None = None) -> str:
         text = render_markdown(self.tools)
@@ -197,7 +235,7 @@ class EvalLoop:
     def run(self, limit: int | None = None) -> Report:
         traces = self.traces[:limit] if limit is not None else self.traces
         summary = run_suite(traces, self._built)
-        return Report(summary, _tool_report(summary))
+        return Report(summary, _tool_report(summary), traces, self.registry)
 
 
 # --- coercion -------------------------------------------------------------

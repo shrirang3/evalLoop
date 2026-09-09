@@ -189,3 +189,35 @@ def test_markdown_is_returned_and_optionally_written(tmp_path: Path) -> None:
 
 def test_cost_is_reported() -> None:
     assert _loop().run().cost_usd > 0
+
+
+# --- the dataset ---
+
+
+def test_a_failure_reaches_the_compiler(tmp_path: Path) -> None:
+    """The point of the report rather than the end of it.
+
+    The mock judge picks the alphabetically first tool - `issue_refund` - so a
+    trace that called `lookup_order` disagrees and becomes a candidate pair.
+    The mock also proposes empty arguments, which the registry rejects, so what
+    this shows is the gate firing rather than a bad row being emitted.
+    """
+    trace = {
+        **TRACE,
+        "output": {
+            "text": "Looking it up.",
+            "tool_calls": [{"name": "lookup_order", "arguments": {"order_id": "O1"}}],
+        },
+    }
+    dataset = _loop(traces=[trace]).run().to_dataset(tmp_path / "feedback.jsonl")
+
+    assert dataset.size == 0
+    assert dataset.dropped["proposal_failed_argument_check"] == 1
+    assert (tmp_path / "feedback.jsonl").exists()
+
+
+def test_the_manifest_explains_an_empty_dataset() -> None:
+    """An empty dataset is never silent: the reasons are the useful output."""
+    manifest = _loop().run().to_dataset().manifest()
+    assert manifest["rows"] == 0
+    assert manifest["dropped_total"] > 0

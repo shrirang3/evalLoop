@@ -4,7 +4,8 @@
 
 Point it at production traces and your agent's tool definitions. Get back the tool calls that were
 wrong — a tool that does not exist, one not permitted where it fired, a defensible tool with an
-undefensible reply, a call the API rejected while the agent said it went through.
+indefensible reply, a call the API rejected while the agent said it went through — **and a training
+dataset compiled from those failures.**
 
 **Ground truth is not a precondition.** Most teams have traces and no labels. Tool correctness comes
 from a registry you already wrote; judge questions report their own provenance. Nothing is blocked
@@ -29,7 +30,8 @@ report = EvalLoop(
 ).run()
 
 report.print()                       # the tables below
-report.to_markdown("report.md")      # ...and as a file
+report.to_markdown("report.md")      # ...as a file
+report.to_dataset("feedback.jsonl")  # ...and as DPO pairs to retrain on
 ```
 
 No database, no migration, no config files beyond the two you point at — and
@@ -79,6 +81,53 @@ EvalLoop(
 `report.results` is every row, `report.failures()` only the ones where a check
 ran and said no, `report.cost_usd` is what it spent.
 
+### The report is not the end of it
+
+A `tool_selection` failure already contains the correct call — the judge chose
+it, blind, before seeing what the agent did. So a preference pair needs no
+labels and no human:
+
+```json
+{"prompt":   [{"role": "user", "content": "blender 45 days ago, arrived broken"}],
+ "chosen":   {"tool_calls": [{"name": "open_warranty_claim",
+                              "arguments": {"order_id": "ORD-8891", "reason": "damaged"}}]},
+ "rejected": {"tool_calls": [{"name": "issue_refund",
+                              "arguments": {"order_id": "ORD-8891", "amount": 79.99}}]},
+ "target_source": "judge_tool_selection", "signal_provenance": "judge",
+ "judge_version": "sha256:ec6f…", "judge_health": "unmeasured"}
+```
+
+**The judge's proposal is validated before it is trained on.** A call the judge
+parameterises wrongly would teach the model the judge's mistake, so every
+proposal goes through the same registry argument check that scores production
+calls — a deterministic check gating judge-derived data:
+
+```
+valid proposal         EMITTED
+bad enum value         dropped: proposal_failed_argument_check
+missing required arg   dropped: proposal_failed_argument_check
+hallucinated arg       dropped: proposal_failed_argument_check
+```
+
+**Nothing invents a target.** Of the four checks only `tool_selection` produces
+one for free — knowing `refund_order_now` does not exist says nothing about what
+should have been called, and an API rejection says the call failed, not what
+would have worked. Those are dropped and counted, and the count is the useful
+output: it says how much of your failure set is unusable and which traces are
+worth a human's time first.
+
+```
+1 preference pair(s) from run run-8814…  →  feedback.jsonl
+fingerprint 7dffa21247b6126f…
+
+Dropped
+  passed                            9
+  proposal_failed_argument_check    3
+  not_applicable                    1
+```
+
+Same thing from the CLI: `evalloop feedback build <run_id> --tools tools.yaml --out feedback.jsonl`.
+
 ### Or the CLI, when you want provenance
 
 The Python path runs nothing past your process. When results need to be
@@ -91,6 +140,7 @@ evalloop validate examples/support-bot/*.yaml
 evalloop ingest   examples/support-bot/project.yaml
 evalloop evaluate examples/support-bot/eval-suite.yaml --split train
 evalloop report   tools --out report.md
+evalloop feedback build --tools examples/support-bot/tools.yaml
 ```
 
 Everything above runs today; see [Status](#status) for what does not.
@@ -139,12 +189,13 @@ evalloop/judge/       provider clients, schema-forced output, cache
 evalloop/store/       Postgres metastore, Parquet traces, artifact store
 evalloop/evaluate/    deterministic checks · judge questions · tool selection · consistency
 evalloop/report/      rollups over stored results
+evalloop/feedback/    failures → DPO pairs, with provenance and a drop histogram
 evalloop/api.py       the Python entry point — no database
-evalloop/cli/         validate · ingest · evaluate · report
+evalloop/cli/         validate · ingest · evaluate · report · feedback
 ```
 
-`judgecard/`, `feedback/`, `train/` and `promote/` exist as empty packages — the interfaces are
-reserved, the phases are not built.
+`judgecard/`, `train/` and `promote/` exist as empty packages — the interfaces are reserved, the
+phases are not built.
 
 ## The files
 
@@ -253,12 +304,12 @@ Each is enforced by a test, not by convention.
 | | |
 |---|---|
 | ✅ P0.1–P0.8 | contracts, metastore, `validate`, JSONL ingest, deterministic + judge evaluators, cache, CI |
-| ✅ plan/002–003 | tool registry, four tool checks, `report tools` |
+| ✅ plan/002–003 | tool registry, four tool checks, `report tools`, `feedback build` |
 | ⬜ P1 · P2.5 | real connectors, redaction, splits, latent ground-truth harvesting |
-| ⬜ P3a → P6 | `judge-health`, judgecard, feedback compiler, LoRA training, promotion gate |
+| ⬜ P3a → P6 | `judge-health`, judgecard, SFT compilation, LoRA training, promotion gate |
 
-`judge-health`, `judgecard`, `label`, `feedback`, `train`, `compare` and `bundle` appear in the
-design docs and do not exist yet. The Quickstart above is the whole of what runs today.
+`judge-health`, `judgecard`, `label`, `train`, `compare` and `bundle` appear in the design docs and
+do not exist yet. The Quickstart above is the whole of what runs today.
 
 **Voice:** traces carry audio as a URI. Tool and transcript layers are evaluated now; acoustic
 evaluation is P8 — a text judge cannot hear tone, and fine-tuning a text model cannot change pitch.

@@ -12,6 +12,7 @@ from rich.console import Console
 
 from evalloop import __version__
 from evalloop.cli.evaluate import evaluate_command
+from evalloop.cli.feedback import feedback_app
 from evalloop.cli.ingest import ingest_command, snapshot_app
 from evalloop.cli.report import report_app
 from evalloop.cli.validate import validate_command
@@ -30,6 +31,7 @@ app.command("ingest")(ingest_command)
 app.command("evaluate")(evaluate_command)
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(report_app, name="report")
+app.add_typer(feedback_app, name="feedback")
 
 
 def _version_callback(value: bool) -> None:

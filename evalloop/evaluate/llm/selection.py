@@ -61,15 +61,27 @@ defensible response, including `best`."""
 
 
 def selection_schema(registry: ToolRegistry, node: str | None) -> dict[str, Any]:
-    """A schema whose answer space is exactly this node's tools plus `none`."""
+    """A schema whose answer space is exactly this node's tools plus `none`.
+
+    `arguments` is free-form here and cannot be otherwise - one schema has to
+    cover whichever tool the judge picks, and each tool has its own argument
+    shape. It is checked afterwards against that tool's declared schema, which
+    is what lets a deterministic check gate judge-derived training data
+    (`plan/002` section 8): a proposed call the registry rejects never becomes
+    a training row.
+    """
     choices = registry.choices(node)
     return {
         "type": "object",
         "properties": {
             "best": {"enum": choices},
+            "arguments": {"type": "object"},
             "acceptable": {"type": "array", "items": {"enum": choices}},
             "reason": {"type": "string"},
         },
+        # `arguments` stays optional: a judge that names the right tool and
+        # declines to parameterise it has still produced a usable verdict, and
+        # only the feedback compiler needs the arguments.
         "required": ["best", "acceptable", "reason"],
     }
 

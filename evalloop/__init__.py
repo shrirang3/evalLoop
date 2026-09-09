@@ -24,6 +24,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from evalloop.api import (
     DEFAULT_CHECKS,
+    Dataset,
     EvalLoop,
     Report,
     llm_question,
@@ -40,6 +41,7 @@ except PackageNotFoundError:  # running from a source tree without an install
 
 __all__ = [
     "DEFAULT_CHECKS",
+    "Dataset",
     "EvalLoop",
     "Report",
     "__version__",
